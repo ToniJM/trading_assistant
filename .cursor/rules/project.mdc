@@ -1,0 +1,115 @@
+---
+alwaysApply: true
+---
+# PROJECT CONTEXT: AI Investment Manager (ADK-first Multi-Agent System)
+
+## <GOALS>
+- Desarrollar un **orquestador multiagente autónomo** para ejecutar, evaluar y optimizar estrategias de inversión.
+- Lograr **autonomía operacional completa**: el sistema debe correr, evaluar, optimizar y decidir despliegues sin intervención humana.
+- Asegurar **rentabilidad, reproducibilidad y trazabilidad** en cada ejecución (run).
+- Integrar el simulador de mercado existente para los backtests.
+- Establecer un pipeline “research → validation → production” continuo.
+
+## <SYSTEM_OVERVIEW>
+**Arquitectura general (ADK-first):**
+- **Orchestrator Agent:** coordina backtests, recibe resultados y dispara optimizaciones.
+- **Evaluator Agent:** analiza métricas y genera reportes (Sharpe, Drawdown, Profit Factor, etc.).
+- **Optimizer Agent:** ajusta parámetros o políticas de estrategia con base en feedback.
+- **Registry Agent:** almacena resultados, métricas y decisiones.
+- **Risk Controller (opcional):** aplica políticas de riesgo y límites de ejecución.
+- **Exchange Simulator:** provee velas e historial de precios (ya implementado).
+
+Cada agente se comunica vía **mensajería A2A** (contratos explícitos), con memoria episódica y vectorial.  
+La orquestación usa el **ADK Graph Runtime** o API equivalente para flujos reproducibles.
+
+---
+
+## <WORKFLOWS>
+### 1. Backtest & Evaluation Flow
+1. `Orchestrator` solicita backtest a `Simulator`.
+2. `Simulator` ejecuta y responde con resultados (candles, trades, pnl).
+3. `Evaluator` procesa y genera métricas cuantitativas.
+4. `Orchestrator` guarda métricas en `Registry` y decide si lanza optimización.
+
+### 2. Optimization Flow
+1. `Optimizer` recibe contexto y métricas previas.
+2. Ajusta parámetros o selecciona estrategias alternativas.
+3. Devuelve configuración candidata al `Orchestrator`.
+4. Ciclo continúa hasta converger en una estrategia “aprobada”.
+
+### 3. Promotion Flow
+1. `Orchestrator` promueve estrategias que cumplan KPIs mínimos.
+2. `Evaluator` valida rendimiento histórico y forward-test simulado.
+3. `Registry` marca el modelo como “prod-ready”.
+4. Se genera artefacto desplegable (parámetros, versión, logs).
+
+---
+
+## <KPIS>
+- **Sharpe Ratio ≥ 2.0**
+- **Max Drawdown ≤ 10%**
+- **Profit Factor ≥ 1.5**
+- **Coverage de test ≥ 80%**
+- **Runtime por ciclo ≤ 5 min**
+- **Reproducibilidad:** 100% determinista con semilla fija.
+
+---
+
+## <RISK_POLICY>
+- **Budget per run:** máximo X backtests simultáneos.
+- **Execution limits:** 1 concurrent optimization flow por estrategia.
+- **Data policy:** usar solo datasets aprobados (fuentes verificadas).
+- **Fail fast:** abortar ejecución si drawdown > threshold configurado.
+
+---
+
+## <MEMORY_AND_LOGGING>
+- **Memory:**
+  - Episódica: contexto de cada run (parámetros, resultados, decisiones).
+  - Vectorial: embeddings de resúmenes y métricas para recuperación futura.
+- **Logs:** estructurados (JSONL), trazados por `agent`, `run_id`, `flow_id`.
+- **Telemetry:** OpenTelemetry, métricas por paso del flujo.
+
+---
+
+## <CODE_CONVENTIONS>
+- Lenguaje principal: **Python 3.11+**
+- Framework multiagente: **Google ADK** (Agent Development Kit)
+- Proveedor de LLM: **Groq** (modelos económicos)
+- Testing: **pytest + fixtures deterministas**
+- Linting: **ruff + mypy**
+- Configuración: **.env + pydantic Settings**
+- Documentación: `docs/architecture.md` + `docs/runbook.md`
+
+## <DEVELOPMENT_ENVIRONMENT>
+- **Entorno virtual:** El proyecto corre en `.venv` (Python virtual environment).
+- **Activación:** Activar el entorno virtual antes de ejecutar cualquier comando: `source .venv/bin/activate` (Linux/macOS) o `.venv\Scripts\activate` (Windows).
+- **Comandos Python:** Usar `python` o `python3` dentro del entorno virtual activado.
+- **Instalación de dependencias:** `pip install -r requirements.txt` (dentro del `.venv` activado).
+
+---
+
+## <RUN_POLICY>
+- **Ciclo automático:** los agentes corren en loop continuo bajo scheduler.
+- **Reset diario:** limpiar memoria episódica y consolidar vector store.
+- **Promoción manual opcional:** aprobaciones humanas en modo híbrido.
+- **Rollback automático:** ante degradación de KPIs.
+
+---
+
+## <DELIVERABLES>
+El sistema debe generar:
+- Logs estructurados por agente.
+- Reportes de métricas (`Evaluator`).
+- Configuraciones óptimas (`Optimizer`).
+- Registro de decisiones (`Registry`).
+- Dashboard o endpoint de estado (`Orchestrator`).
+
+---
+
+## <FUTURE_EXPANSION>
+- Integración con brokers reales (paper trading).
+- Optimización bayesiana o RL.
+- Módulo de portfolio allocator multi-estrategia.
+- Web dashboard (Angular + FastAPI) para monitoreo y control manual.
+
