@@ -258,6 +258,8 @@ class BacktestRunner:
     def _run_headless(self):
         """Ejecutar backtest en modo headless - avance automático"""
         debug_logger = get_debug_logger("backtest.debug")
+        # Conectar el debug_logger al handler del backtest para que sus logs aparezcan en el archivo
+        debug_logger.addHandler(self.backtest_handler)
 
         # Log de depuración: verificar estado inicial (DEBUG)
         ended = self.simulator.ended(self.config.symbol)

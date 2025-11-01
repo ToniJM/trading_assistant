@@ -1,9 +1,11 @@
 """Pydantic contracts for A2A messaging between agents"""
+
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Config, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class StartBacktestRequest(BaseModel):
@@ -12,7 +14,7 @@ class StartBacktestRequest(BaseModel):
     run_id: str = Field(default_factory=lambda: str(uuid4()), description="Unique run identifier")
     symbol: str = Field(..., description="Trading symbol (e.g., BTCUSDT)")
     start_time: int = Field(..., description="Start timestamp in milliseconds")
-    end_time:[int] = Field(None, description="End timestamp in milliseconds (None = current time)")
+    end_time: int | None = Field(None, description="End timestamp in milliseconds (None = current time)")
     initial_balance: Decimal = Field(Decimal("2500"), description="Initial account balance")
     leverage: Decimal = Field(Decimal("100"), description="Leverage")
     maker_fee: Decimal = Field(Decimal("0.0002"), description="Maker fee rate")
@@ -23,7 +25,7 @@ class StartBacktestRequest(BaseModel):
     max_loss_percentage: float = Field(0.5, description="Maximum loss percentage (0.5 = 50%)")
     track_cycles: bool = Field(True, description="Track trading cycles")
 
-    model_config = Config(
+    model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "run_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -48,7 +50,7 @@ class BacktestStatusUpdate(BaseModel):
     execution_time_seconds: float = Field(0, description="Execution time in seconds")
     candles_per_second: float = Field(0, description="Processing rate")
 
-    @field_serializer('current_balance')
+    @field_serializer("current_balance")
     def serialize_decimal(self, value: Decimal) -> str:
         return str(value)
 
@@ -95,7 +97,7 @@ class BacktestResultsResponse(BaseModel):
     strategy_name: str = Field(..., description="Strategy name used")
     symbol: str = Field(..., description="Trading symbol")
 
-    model_config = Config(
+    model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "run_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -109,7 +111,7 @@ class BacktestResultsResponse(BaseModel):
         }
     )
 
-    @field_serializer('final_balance', 'total_return', 'total_commission', 'avg_cycle_pnl')
+    @field_serializer("final_balance", "total_return", "total_commission", "avg_cycle_pnl")
     def serialize_decimal(self, value: Decimal) -> str:
         return str(value)
 
@@ -120,11 +122,11 @@ class OptimizationRequest(BaseModel):
     run_id: str = Field(default_factory=lambda: str(uuid4()), description="Optimization run identifier")
     strategy_name: str = Field(..., description="Strategy to optimize")
     symbol: str = Field(..., description="Trading symbol")
-    parameter_space:[str[float]] = Field(..., description="Parameter space to explore")
+    parameter_space: dict[str, list[float]] = Field(..., description="Parameter space to explore")
     objective: str = Field("sharpe_ratio", description="Optimization objective: sharpe_ratio, profit_factor, etc.")
-    backtest_config:[StartBacktestRequest] = Field(None, description="Base backtest configuration")
+    backtest_config: StartBacktestRequest | None = Field(None, description="Base backtest configuration")
 
-    model_config = Config(
+    model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "run_id": "opt-550e8400-e29b-41d4-a716-446655440000",
@@ -144,15 +146,13 @@ class EvaluationRequest(BaseModel):
     """Request to evaluate backtest results"""
 
     run_id: str = Field(..., description="Run identifier to evaluate")
-    metrics:[[str]] = Field(
-        None, description="Specific metrics to evaluate (None = all metrics)"
-    )
-    kpis:[[str, float]] = Field(
+    metrics: list[str] | None = Field(None, description="Specific metrics to evaluate (None = all metrics)")
+    kpis: dict[str, float] | None = Field(
         None,
         description="KPIs to check: {'sharpe_ratio': 2.0, 'max_drawdown': 0.1, 'profit_factor': 1.5}",
     )
 
-    model_config = Config(
+    model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "run_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -168,11 +168,11 @@ class EvaluationResponse(BaseModel):
 
     run_id: str = Field(..., description="Run identifier")
     evaluation_passed: bool = Field(..., description="Whether KPIs are met")
-    metrics:[str, float] = Field(..., description="Calculated metrics")
-    kpi_compliance:[str, bool] = Field(..., description="KPI compliance status")
+    metrics: dict[str, float] = Field(..., description="Calculated metrics")
+    kpi_compliance: dict[str, bool] = Field(..., description="KPI compliance status")
     recommendation: str = Field(..., description="Recommendation: promote, reject, optimize")
 
-    model_config = Config(
+    model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "run_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -195,7 +195,7 @@ class AgentMessage(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now, description="Message timestamp")
     payload: BaseModel = Field(..., description="Message payload (request/response)")
 
-    @field_serializer('timestamp')
+    @field_serializer("timestamp")
     def serialize_datetime(self, value: datetime) -> str:
         return value.isoformat()
 
@@ -205,10 +205,10 @@ class ErrorResponse(BaseModel):
 
     error_code: str = Field(..., description="Error code")
     error_message: str = Field(..., description="Human-readable error message")
-    error_details:[] = Field(None, description="Additional error details")
-    run_id:[str] = Field(None, description="Run identifier if applicable")
+    error_details: list[Any] | None = Field(None, description="Additional error details")
+    run_id: str | None = Field(None, description="Run identifier if applicable")
 
-    model_config = Config(
+    model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "error_code": "INSUFFICIENT_BALANCE",
@@ -217,4 +217,3 @@ class ErrorResponse(BaseModel):
             }
         }
     )
-
