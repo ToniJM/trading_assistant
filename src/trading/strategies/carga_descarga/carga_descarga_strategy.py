@@ -95,7 +95,6 @@ def _get_rich():
 
 class CargaDescargaStrategy(StrategyPort):
     rsi_limits = [15, 50, 85]
-    timeframes = ["1m", "15m", "1h"]
 
     def __init__(
         self,
@@ -105,12 +104,19 @@ class CargaDescargaStrategy(StrategyPort):
         operation_status_repository: OperationsStatusRepositoryPort,
         cycle_dispatcher: CycleListenerPort = None,
         strategy_name: str = "default",
+        timeframes: list[str] = None,
     ):
         self.logger = get_logger(self.__class__.__name__)
         self.logger.debug("__init__")
 
         self._symbol = symbol
         self._strategy_name = strategy_name
+        
+        # Set timeframes: use provided or default
+        if timeframes is None:
+            self.timeframes = ["1m", "15m", "1h"]
+        else:
+            self.timeframes = timeframes
 
         self.market_data = market_data
         self.exchange = exchange

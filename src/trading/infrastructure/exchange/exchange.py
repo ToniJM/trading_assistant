@@ -23,6 +23,7 @@ class Exchange:
         self.maker_fee = Decimal(0)
         self.taker_fee = Decimal(0)
         self.max_notional = Decimal(0)
+        self.base_timeframe: str = "1m"  # Default for backwards compatibility
 
         self.current_candle:[Candle] = None
 
@@ -50,6 +51,14 @@ class Exchange:
     def set_max_notional(self, notional: Decimal):
         """Set maximum notional"""
         self.max_notional = notional
+
+    def set_base_timeframe(self, timeframe: str):
+        """Set base timeframe for order execution
+
+        Args:
+            timeframe: The base timeframe to use (e.g., "1m", "3m")
+        """
+        self.base_timeframe = timeframe
 
     def get_candles(self, symbol: str, interval: str, limit: int) ->[Candle]:
         """Get candles from market data"""
@@ -100,7 +109,7 @@ class Exchange:
         if type == "limit" and price is None:
             raise ValueError("Limit orders must specify a price")
 
-        candles = self.market_data_adapter.get_candles(symbol, "1m", 10)
+        candles = self.market_data_adapter.get_candles(symbol, self.base_timeframe, 10)
         if not candles:
             raise ValueError(f"No candles available for {symbol}")
         candle = candles[-1]
@@ -124,7 +133,7 @@ class Exchange:
             order.price = candle.close_price
             self._complete_order(order, candle)
         else:
-            self.market_data_adapter.add_internal_candle_listener(symbol, "1m", self._on_candle_update)
+            self.market_data_adapter.add_internal_candle_listener(symbol, self.base_timeframe, self._on_candle_update)
             self.event_dispatcher.dispatch_order(order)
 
         return order
@@ -134,7 +143,7 @@ class Exchange:
         if (order.position_side == "long" and order.side == "buy") or (
             order.position_side == "short" and order.side == "sell"
         ):
-            candles = self.market_data_adapter.get_candles(order.symbol, "1m", 10)
+            candles = self.market_data_adapter.get_candles(order.symbol, self.base_timeframe, 10)
             if not candles:
                 return None
             candle = candles[-1]
@@ -151,7 +160,7 @@ class Exchange:
                 raise ValueError("Max notional exceeded")
 
         if order.type == "market":
-            candles = self.market_data_adapter.get_candles(order.symbol, "1m", 10)
+            candles = self.market_data_adapter.get_candles(order.symbol, self.base_timeframe, 10)
             if candles:
                 candle = candles[-1]
                 order.price = candle.close_price
@@ -177,7 +186,7 @@ class Exchange:
 
         orders = self.orders_repository.get_symbol_orders(order.symbol)
         if len(orders) == 0:
-            self.market_data_adapter.remove_internal_candle_listener(order.symbol, "1m", self._on_candle_update)
+            self.market_data_adapter.remove_internal_candle_listener(order.symbol, self.base_timeframe, self._on_candle_update)
 
         return deleted
 

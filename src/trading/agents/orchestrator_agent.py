@@ -1,4 +1,5 @@
 """Orchestrator Agent - Coordinates backtests and evaluations"""
+
 from collections.abc import Callable
 
 from trading.domain.messages import (
@@ -78,7 +79,7 @@ class OrchestratorAgent(BaseAgent):
                     end_time=request.end_time,
                     min_candles=10,
                 )
-                self.simulator_agent.add_symbol(request.symbol)
+                self.simulator_agent.add_symbol(request.symbol, timeframes=request.timeframes)
 
                 # Use orchestrator's run_id for the request to ensure single run log file
                 if request.run_id != self.run_id:
@@ -160,4 +161,3 @@ class OrchestratorAgent(BaseAgent):
             if self.backtest_agent:
                 self.backtest_agent.close()
             self.logger.info("OrchestratorAgent closed")
-

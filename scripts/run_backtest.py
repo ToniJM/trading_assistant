@@ -44,6 +44,7 @@ def run_backtest(
     initial_balance: Decimal = Decimal("2500"),
     leverage: Decimal = Decimal("100"),
     max_notional: Decimal = Decimal("50000"),
+    timeframes: list[str] = None,
     **kwargs
 ):
     """Execute backtest using OrchestratorAgent"""
@@ -59,6 +60,10 @@ def run_backtest(
     orchestrator = OrchestratorAgent(run_id=f"backtest_{int(datetime.now().timestamp() * 1000)}")
     orchestrator.initialize()
 
+    # Set default timeframes if not provided
+    if timeframes is None:
+        timeframes = ["1m", "15m", "1h"]
+
     # Create backtest request (use orchestrator's run_id to ensure single run log file)
     request = StartBacktestRequest(
         symbol=symbol,
@@ -69,11 +74,12 @@ def run_backtest(
         max_notional=max_notional,
         strategy_name=strategy_name,
         run_id=orchestrator.run_id,  # Use orchestrator's run_id to avoid creating separate run logs
+        timeframes=timeframes,
         **kwargs
     )
 
-    # Create strategy factory
-    strategy_factory = create_strategy_factory(strategy_name=strategy_name)
+    # Create strategy factory with timeframes
+    strategy_factory = create_strategy_factory(strategy_name=strategy_name, timeframes=timeframes)
 
     try:
         # Execute backtest
@@ -115,6 +121,12 @@ def main():
     parser.add_argument(
         "--stop-on-loss", action="store_true", default=True, help="Stop backtest if loss threshold reached"
     )
+    parser.add_argument(
+        "--timeframes",
+        nargs="+",
+        default=["1m", "15m", "1h"],
+        help="Timeframes to use (e.g., --timeframes 1m 15m 1h). Default: ['1m', '15m', '1h']",
+    )
 
     args = parser.parse_args()
 
@@ -133,6 +145,7 @@ def main():
         max_notional=args.max_notional,
         max_loss_percentage=args.max_loss_percentage,
         stop_on_loss=args.stop_on_loss,
+        timeframes=args.timeframes,
     )
 
 

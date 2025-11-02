@@ -29,6 +29,10 @@ class SimulatorAdapter(ExchangePort):
         """Set maximum notional"""
         self.simulator.set_max_notional(max_notional)
 
+    def set_base_timeframe(self, timeframe: str):
+        """Set base timeframe for order execution"""
+        self.simulator.set_base_timeframe(timeframe)
+
     def get_balance(self) -> Decimal:
         """Get current account balance"""
         return self.simulator.get_balance()
@@ -120,6 +124,10 @@ class BacktestExchangeAdapter(ExchangePort):
     def set_max_notional(self, notional: Decimal):
         """Set maximum notional"""
         self.simulator_adapter.set_max_notional(notional)
+
+    def set_base_timeframe(self, timeframe: str):
+        """Set base timeframe for order execution"""
+        self.simulator_adapter.set_base_timeframe(timeframe)
 
     def get_balance(self) -> Decimal:
         """Get current account balance"""

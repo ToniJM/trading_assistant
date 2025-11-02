@@ -70,6 +70,7 @@ class BacktestAgent(BaseAgent):
                     stop_on_loss=request.stop_on_loss,
                     max_loss_percentage=request.max_loss_percentage,
                     track_cycles=request.track_cycles,
+                    timeframes=request.timeframes,
                     log_filename=f"backtest_{backtest_id}",
                     run_id=run_id,  # Use orchestrator's run_id for logging context
                 )

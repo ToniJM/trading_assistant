@@ -24,6 +24,7 @@ class StartBacktestRequest(BaseModel):
     stop_on_loss: bool = Field(True, description="Stop backtest if loss threshold reached")
     max_loss_percentage: float = Field(0.5, description="Maximum loss percentage (0.5 = 50%)")
     track_cycles: bool = Field(True, description="Track trading cycles")
+    timeframes: list[str] = Field(default_factory=lambda: ["1m", "15m", "1h"], description="List of timeframes to use (e.g., ['1m', '15m', '1h'])")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -35,6 +36,7 @@ class StartBacktestRequest(BaseModel):
                 "initial_balance": "2500",
                 "leverage": "100",
                 "strategy_name": "carga_descarga",
+                "timeframes": ["1m", "15m", "1h"],
             }
         }
     )

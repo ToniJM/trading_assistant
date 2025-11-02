@@ -1,7 +1,10 @@
 """Backtest configuration and preset configs"""
+
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
+
+from trading.infrastructure.simulator.domain.constants import TIMEFRAME_MINUTES
 
 # Note: These imports are not used in this module but kept for consistency
 # from trading.infrastructure.logging import get_backtest_logger, get_logger
@@ -34,26 +37,62 @@ def enable_logging_after_backtest():
     set_backtest_mode(False)
 
 
+def validate_timeframes(timeframes: list[str]) -> list[str]:
+    """Validate that all timeframes exist in TIMEFRAME_MINUTES and count is 2, 3 or 4
+
+    Args:
+        timeframes: List of timeframe strings to validate
+
+    Returns:
+        The same list if all timeframes are valid
+
+    Raises:
+        ValueError: If any timeframe is not valid, list is empty, or count is not 2, 3 or 4
+    """
+    if not timeframes:
+        raise ValueError("At least one timeframe must be provided")
+
+    # Validate count: must be 2, 3 or 4
+    count = len(timeframes)
+    if count not in [2, 3, 4]:
+        raise ValueError(f"Number of timeframes must be 2, 3 or 4, but got {count}. Provided timeframes: {timeframes}")
+
+    # Validate that all timeframes exist in TIMEFRAME_MINUTES
+    valid_timeframes = set(TIMEFRAME_MINUTES.keys())
+    invalid_timeframes = [tf for tf in timeframes if tf not in valid_timeframes]
+
+    if invalid_timeframes:
+        valid_list = ", ".join(sorted(valid_timeframes))
+        raise ValueError(f"Invalid timeframes: {', '.join(invalid_timeframes)}. Valid timeframes are: {valid_list}")
+
+    return timeframes
+
+
 @dataclass
 class BacktestConfig:
     """Backtest configuration"""
 
     symbol: str
     start_time: int
-    end_time:[int] = None
+    end_time: [int] = None
     initial_balance: Decimal = Decimal("2500")
     leverage: Decimal = Decimal("100")
     maker_fee: Decimal = Decimal("0.0002")
     taker_fee: Decimal = Decimal("0.0005")
     max_notional: Decimal = Decimal("50000")
     enable_frontend: bool = False
-    progress_callback:[Callable] = None
+    progress_callback: [Callable] = None
     stop_on_loss: bool = True
     max_loss_percentage: float = 0.5  # 50% max loss
     strategy_name: str = "default"
     track_cycles: bool = True
-    log_filename:[str] = None  # Auto-generated if None
-    run_id:[str] = None  # Run ID for logging to runs/ directory
+    log_filename: [str] = None  # Auto-generated if None
+    run_id: [str] = None  # Run ID for logging to runs/ directory
+    timeframes: list[str] = field(default_factory=lambda: ["1m", "15m", "1h"])
+
+    def __post_init__(self):
+        """Validate timeframes after initialization"""
+        validate_timeframes(self.timeframes)
 
 
 @dataclass
@@ -140,4 +179,3 @@ class BacktestConfigs:
             "stop_on_loss": True,
             "max_loss_percentage": 0.05,  # 5% max loss
         }
-

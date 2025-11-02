@@ -12,6 +12,34 @@ from trading.infrastructure.simulator.domain.constants import ONE_MINUTE, TIMEFR
 from trading.infrastructure.simulator.domain.types import TIMEFRAME_TYPE
 
 
+def get_base_timeframe(timeframes: list[str]) -> str:
+    """Get the lowest (shortest duration) timeframe from a list of timeframes
+
+    Args:
+        timeframes: List of timeframe strings (e.g., ["3m", "15m", "1h"])
+
+    Returns:
+        The timeframe with shortest duration, or "1m" as default if list is empty or invalid
+    """
+    if not timeframes:
+        # Default to "1m" if no timeframes provided for safety
+        return "1m"
+
+    # Find timeframe with minimum duration (minutes)
+    base_timeframe = None
+    min_minutes = float("inf")
+
+    for tf in timeframes:
+        if tf in TIMEFRAME_MINUTES:
+            minutes = TIMEFRAME_MINUTES[tf]
+            if minutes < min_minutes:
+                min_minutes = minutes
+                base_timeframe = tf
+
+    # If no valid timeframe found, default to "1m"
+    return base_timeframe if base_timeframe else "1m"
+
+
 class MarketDataSimulator:
     """Simulator for market data in backtests"""
 
@@ -46,6 +74,22 @@ class MarketDataSimulator:
     def end(self, symbol: str):
         """Mark symbol simulation as ended"""
         self.endeds[symbol] = True
+
+    def _get_base_timeframe(self, symbol: str) -> str:
+        """Get the lowest (shortest duration) timeframe for a symbol
+
+        Args:
+            symbol: Trading symbol to get base timeframe for
+
+        Returns:
+            The timeframe with shortest duration, or "1m" as default if no timeframes configured
+        """
+        if symbol not in self.symbols_timeframes or not self.symbols_timeframes[symbol]:
+            # Default to "1m" if no timeframes configured for safety
+            return "1m"
+
+        timeframes = self.symbols_timeframes[symbol]
+        return get_base_timeframe(timeframes)
 
     def set_times(self, start: int, end: [int] = None, min_candles: int = 10):
         """Set simulation time range
@@ -145,14 +189,19 @@ class MarketDataSimulator:
         if self.ended(symbol):
             raise ValueError("Symbol ended")
 
+        # Get base timeframe (lowest duration) for this symbol
+        base_timeframe = self._get_base_timeframe(symbol)
+        base_timeframe_minutes = TIMEFRAME_MINUTES[base_timeframe]
+        base_timeframe_ms = base_timeframe_minutes * ONE_MINUTE
+
         # DEBUG: valores internos de _next_candle()
         debug_logger.debug(
             f"_next_candle({symbol}): "
             f"current_time={self.current_time} ({datetime.fromtimestamp(self.current_time / 1000)}), "
-            f"ended={self.ended(symbol)}"
+            f"ended={self.ended(symbol)}, base_timeframe={base_timeframe}"
         )
 
-        candle = self.candles_repo.get_next_candle(symbol, self.current_time)
+        candle = self.candles_repo.get_next_candle(symbol, self.current_time, timeframe=base_timeframe)
         # DEBUG: resultado de get_next_candle()
         debug_logger.debug(
             f"get_next_candle retornó: {candle is not None}, timestamp={candle.timestamp if candle else None}"
@@ -161,7 +210,7 @@ class MarketDataSimulator:
         if candle is None:
             # INFO: operación importante - obtener velas de market_data
             logger.info(f"No hay velas en repo para {symbol}, obteniendo de market_data...")
-            candles = self.market_data.get_candles(symbol, "1m", 1000, self.current_time)
+            candles = self.market_data.get_candles(symbol, base_timeframe, 1000, self.current_time)
             logger.info(f"market_data.get_candles retornó {len(candles)} velas")
             logger.info(f"Agregando {len(candles)} velas al repositorio...")
             self.candles_repo.add_candles(candles)
@@ -174,10 +223,10 @@ class MarketDataSimulator:
                     f"({datetime.fromtimestamp(self.current_time / 1000)})"
                 )
                 raise ValueError(f"No candles available for {symbol} at {self.current_time}")
-        elif candle.timestamp > self.current_time + ONE_MINUTE:
+        elif candle.timestamp > self.current_time + base_timeframe_ms:
             # INFO: operación importante - obtener más velas
             logger.info("Siguiente vela está muy adelante, obteniendo más velas de market_data...")
-            candles = self.market_data.get_candles(symbol, "1m", 1000, self.current_time)
+            candles = self.market_data.get_candles(symbol, base_timeframe, 1000, self.current_time)
             logger.info(f"Agregando {len(candles)} velas al repositorio...")
             self.candles_repo.add_candles(candles)
             logger.info("Velas agregadas al repositorio exitosamente")
@@ -192,11 +241,11 @@ class MarketDataSimulator:
             debug_logger.debug(f"Candle dispatched exitosamente para {symbol}")
 
         # DEBUG: después de dispatch, antes de procesar otros timeframes
-        debug_logger.debug(f"Procesando otros timeframes: {[tf for tf in timeframes if tf != '1m']}")
+        debug_logger.debug(f"Procesando otros timeframes: {[tf for tf in timeframes if tf != base_timeframe]}")
 
         # Process other timeframes
         for timeframe in timeframes:
-            if timeframe != "1m":
+            if timeframe != base_timeframe:
                 debug_logger.debug(f"Procesando timeframe {timeframe} para {symbol}")
                 timeframe_candles = self.get_candles(symbol, timeframe, 1)
                 candles_count = len(timeframe_candles) if timeframe_candles else 0

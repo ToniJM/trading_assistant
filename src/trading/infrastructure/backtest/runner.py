@@ -23,7 +23,7 @@ from trading.infrastructure.logging import (
     get_logger,
     logging_context,
 )
-from trading.infrastructure.simulator.simulator import MarketDataSimulator
+from trading.infrastructure.simulator.simulator import MarketDataSimulator, get_base_timeframe
 
 
 class BacktestRunner:
@@ -58,12 +58,12 @@ class BacktestRunner:
             self.simulator = simulator
 
         self.simulator.set_times(start=config.start_time, end=config.end_time, min_candles=10)
-        self.simulator.symbols_timeframes[config.symbol] = ["1m", "15m", "1h"]
+        self.simulator.symbols_timeframes[config.symbol] = config.timeframes
 
         # Inicializar exchange y market data
-        self.exchange:[ExchangePort] = None
-        self.market_data:[MarketDataPort] = None
-        self.strategy:[StrategyPort] = None
+        self.exchange: [ExchangePort] = None
+        self.market_data: [MarketDataPort] = None
+        self.strategy: [StrategyPort] = None
         self.front = None
 
         # Métricas de rendimiento
@@ -78,7 +78,7 @@ class BacktestRunner:
         # Cycle tracking
         self.cycles_repository = CyclesRepository() if config.track_cycles else None
         self.cycle_dispatcher = EventDispatcher() if config.track_cycles else None
-        self.cycles:[Cycle] = []
+        self.cycles: [Cycle] = []
 
     def _configure_component_loggers(self):
         """Configurar loggers de componentes para que escriban al backtest"""
@@ -99,10 +99,10 @@ class BacktestRunner:
 
     def setup_exchange_and_strategy(
         self,
-        exchange_factory:[Callable] = None,
-        market_data_factory:[Callable] = None,
+        exchange_factory: [Callable] = None,
+        market_data_factory: [Callable] = None,
         strategy_factory: Callable = None,
-        frontend_factory:[Callable] = None,
+        frontend_factory: [Callable] = None,
     ):
         """Configurar exchange, market data y estrategia
 
@@ -132,6 +132,9 @@ class BacktestRunner:
         self.exchange.set_leverage(self.config.symbol, self.config.leverage)
         self.exchange.set_fees(self.config.maker_fee, self.config.taker_fee)
         self.exchange.set_max_notional(self.config.max_notional)
+        # Configurar timeframe base para order execution
+        base_timeframe = get_base_timeframe(self.config.timeframes)
+        self.exchange.set_base_timeframe(base_timeframe)
 
         # Crear estrategia
         self.strategy = strategy_factory(
@@ -279,8 +282,7 @@ class BacktestRunner:
 
         if ended:
             self.logger.warning(
-                f"El simulador ya está marcado como terminado para {self.config.symbol} "
-                f"antes de iniciar el loop!"
+                f"El simulador ya está marcado como terminado para {self.config.symbol} antes de iniciar el loop!"
             )
             return
 

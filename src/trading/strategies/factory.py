@@ -16,12 +16,14 @@ from trading.strategies.carga_descarga.carga_descarga_strategy import CargaDesca
 def create_strategy_factory(
     strategy_name: str = "carga_descarga",
     operations_status_repository: [OperationsStatusRepositoryPort] = None,
+    timeframes: list[str] = None,
 ) -> Callable:
     """Create a strategy factory function for BacktestRunner
 
     Args:
         strategy_name: Name of the strategy to use
         operations_status_repository: OperationsStatusRepository. If None, uses BacktestOperationsStatusRepository
+        timeframes: List of timeframes to use. If None, strategy will use its default
 
     Returns:
         Factory function compatible with BacktestRunner.setup_exchange_and_strategy()
@@ -45,6 +47,7 @@ def create_strategy_factory(
                 operation_status_repository=ops_repo,
                 cycle_dispatcher=cycle_dispatcher,
                 strategy_name=strategy_name,
+                timeframes=timeframes,
             )
 
         return factory
