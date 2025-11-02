@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 class StartBacktestRequest(BaseModel):
@@ -28,6 +28,22 @@ class StartBacktestRequest(BaseModel):
         default_factory=lambda: ["1m", "15m", "1h"],
         description="List of timeframes to use (e.g., ['1m', '15m', '1h'])",
     )
+    rsi_limits: list[int] | None = Field(
+        None,
+        description="RSI threshold values [low, medium, high]. Must be 3 values in range 0-100. Default: [15, 50, 85]",
+    )
+
+    @field_validator("rsi_limits")
+    @classmethod
+    def validate_rsi_limits(cls, v: list[int] | None) -> list[int] | None:
+        """Validate RSI limits: must be exactly 3 values, all in range 0-100"""
+        if v is None:
+            return v
+        if len(v) != 3:
+            raise ValueError(f"rsi_limits must have exactly 3 values, got {len(v)}")
+        if not all(0 <= val <= 100 for val in v):
+            raise ValueError(f"All rsi_limits values must be in range 0-100, got {v}")
+        return v
 
     model_config = ConfigDict(
         json_schema_extra={

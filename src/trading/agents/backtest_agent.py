@@ -5,6 +5,7 @@ from trading.domain.messages import AgentMessage, BacktestResultsResponse, Start
 from trading.infrastructure.backtest.config import BacktestConfig
 from trading.infrastructure.backtest.runner import BacktestRunner
 from trading.infrastructure.logging import logging_context
+from trading.strategies.factory import create_strategy_factory
 
 from .base_agent import BaseAgent
 
@@ -79,7 +80,15 @@ class BacktestAgent(BaseAgent):
                 self.runner = BacktestRunner(config=config)
                 self.store_memory(f"backtest_{request.run_id}_config", config)
 
-                # Setup exchange and strategy (use defaults if no factory provided)
+                # Create strategy factory if not provided
+                if strategy_factory is None:
+                    strategy_factory = create_strategy_factory(
+                        strategy_name=request.strategy_name,
+                        timeframes=request.timeframes,
+                        rsi_limits=request.rsi_limits,
+                    )
+
+                # Setup exchange and strategy
                 self.runner.setup_exchange_and_strategy(strategy_factory=strategy_factory)
 
                 # Execute backtest

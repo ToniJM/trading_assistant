@@ -8,7 +8,7 @@ from trading.infrastructure.backtest.adapters.operations_status_repository impor
 from trading.strategies.carga_descarga.carga_descarga_strategy import CargaDescargaStrategy
 
 
-def create_mock_strategy(timeframes: list[str]) -> CargaDescargaStrategy:
+def create_mock_strategy(timeframes: list[str], rsi_limits: list[int] | None = None) -> CargaDescargaStrategy:
     """Helper to create a CargaDescargaStrategy instance with mocked dependencies"""
     mock_exchange = Mock(spec=ExchangePort)
     mock_market_data = Mock(spec=MarketDataPort)
@@ -22,6 +22,7 @@ def create_mock_strategy(timeframes: list[str]) -> CargaDescargaStrategy:
         cycle_dispatcher=None,
         strategy_name="test_strategy",
         timeframes=timeframes,
+        rsi_limits=rsi_limits,
     )
     return strategy
 
@@ -144,4 +145,76 @@ def test_get_threshold_loads_minimum_value():
     strategy = create_mock_strategy(timeframes=["15m", "1h"])
     # base_threshold=1 with 2 timeframes → 1 (max(1, int(1 * 2/3)) = 1)
     assert strategy._get_threshold_loads(1) == 1
+
+
+def test_rsi_limits_default():
+    """Test CargaDescargaStrategy has default rsi_limits"""
+    strategy = create_mock_strategy(timeframes=["1m", "15m", "1h"])
+    assert strategy.rsi_limits == [15, 50, 85]
+
+
+def test_rsi_limits_custom():
+    """Test CargaDescargaStrategy accepts custom rsi_limits"""
+    strategy = create_mock_strategy(
+        timeframes=["1m", "15m", "1h"],
+        rsi_limits=[10, 50, 90]
+    )
+    assert strategy.rsi_limits == [10, 50, 90]
+
+
+def test_rsi_limits_validation_length():
+    """Test CargaDescargaStrategy validates rsi_limits has exactly 3 values"""
+    import pytest
+
+    # Test with 2 values - should fail
+    with pytest.raises(ValueError) as exc_info:
+        create_mock_strategy(
+            timeframes=["1m", "15m", "1h"],
+            rsi_limits=[10, 50]
+        )
+    assert "exactly 3 values" in str(exc_info.value).lower()
+
+    # Test with 4 values - should fail
+    with pytest.raises(ValueError) as exc_info:
+        create_mock_strategy(
+            timeframes=["1m", "15m", "1h"],
+            rsi_limits=[10, 50, 90, 95]
+        )
+    assert "exactly 3 values" in str(exc_info.value).lower()
+
+
+def test_rsi_limits_validation_range():
+    """Test CargaDescargaStrategy validates rsi_limits values are in range 0-100"""
+    import pytest
+
+    # Test with value < 0 - should fail
+    with pytest.raises(ValueError) as exc_info:
+        create_mock_strategy(
+            timeframes=["1m", "15m", "1h"],
+            rsi_limits=[-10, 50, 90]
+        )
+    assert "range 0-100" in str(exc_info.value).lower()
+
+    # Test with value > 100 - should fail
+    with pytest.raises(ValueError) as exc_info:
+        create_mock_strategy(
+            timeframes=["1m", "15m", "1h"],
+            rsi_limits=[10, 50, 110]
+        )
+    assert "range 0-100" in str(exc_info.value).lower()
+
+
+def test_rsi_limits_uses_values_in_logic():
+    """Test that strategy uses configured rsi_limits values"""
+    # Create strategy with custom rsi_limits
+    strategy = create_mock_strategy(
+        timeframes=["1m", "15m", "1h"],
+        rsi_limits=[20, 60, 80]
+    )
+
+    # Verify the strategy instance has the correct limits
+    assert strategy.rsi_limits == [20, 60, 80]
+    assert strategy.rsi_limits[0] == 20  # low threshold
+    assert strategy.rsi_limits[1] == 60  # medium threshold
+    assert strategy.rsi_limits[2] == 80  # high threshold
 

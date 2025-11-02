@@ -53,3 +53,80 @@ def test_strategy_factory_default_timeframes():
     # Verify strategy was created with default timeframes
     assert strategy.timeframes == ["1m", "15m", "1h"]
 
+
+def test_strategy_factory_passes_rsi_limits():
+    """Test strategy factory passes rsi_limits to strategy"""
+    # Create mocks
+    mock_exchange = Mock(spec=ExchangePort)
+    mock_market_data = Mock(spec=MarketDataPort)
+    mock_cycle_dispatcher = Mock(spec=CycleListenerPort)
+
+    # Create factory with custom rsi_limits
+    factory_func = create_strategy_factory(
+        strategy_name="carga_descarga",
+        rsi_limits=[10, 50, 90]
+    )
+
+    # Create strategy using factory
+    strategy = factory_func(
+        symbol="BTCUSDT",
+        exchange=mock_exchange,
+        market_data=mock_market_data,
+        cycle_dispatcher=mock_cycle_dispatcher,
+        strategy_name="carga_descarga",
+    )
+
+    # Verify strategy was created with correct rsi_limits
+    assert strategy.rsi_limits == [10, 50, 90]
+
+
+def test_strategy_factory_default_rsi_limits():
+    """Test strategy factory with no rsi_limits uses strategy default"""
+    # Create mocks
+    mock_exchange = Mock(spec=ExchangePort)
+    mock_market_data = Mock(spec=MarketDataPort)
+    mock_cycle_dispatcher = Mock(spec=CycleListenerPort)
+
+    # Create factory without rsi_limits
+    factory_func = create_strategy_factory(strategy_name="carga_descarga")
+
+    # Create strategy using factory
+    strategy = factory_func(
+        symbol="BTCUSDT",
+        exchange=mock_exchange,
+        market_data=mock_market_data,
+        cycle_dispatcher=mock_cycle_dispatcher,
+        strategy_name="carga_descarga",
+    )
+
+    # Verify strategy was created with default rsi_limits
+    assert strategy.rsi_limits == [15, 50, 85]
+
+
+def test_strategy_factory_passes_both_rsi_limits_and_timeframes():
+    """Test strategy factory passes both rsi_limits and timeframes"""
+    # Create mocks
+    mock_exchange = Mock(spec=ExchangePort)
+    mock_market_data = Mock(spec=MarketDataPort)
+    mock_cycle_dispatcher = Mock(spec=CycleListenerPort)
+
+    # Create factory with both custom rsi_limits and timeframes
+    factory_func = create_strategy_factory(
+        strategy_name="carga_descarga",
+        timeframes=["3m", "15m", "1h"],
+        rsi_limits=[20, 60, 80]
+    )
+
+    # Create strategy using factory
+    strategy = factory_func(
+        symbol="BTCUSDT",
+        exchange=mock_exchange,
+        market_data=mock_market_data,
+        cycle_dispatcher=mock_cycle_dispatcher,
+        strategy_name="carga_descarga",
+    )
+
+    # Verify strategy was created with both custom values
+    assert strategy.timeframes == ["3m", "15m", "1h"]
+    assert strategy.rsi_limits == [20, 60, 80]
+

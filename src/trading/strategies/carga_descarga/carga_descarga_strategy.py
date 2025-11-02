@@ -94,8 +94,6 @@ def _get_rich():
 
 
 class CargaDescargaStrategy(StrategyPort):
-    rsi_limits = [15, 50, 85]
-
     def __init__(
         self,
         symbol,
@@ -105,6 +103,7 @@ class CargaDescargaStrategy(StrategyPort):
         cycle_dispatcher: CycleListenerPort = None,
         strategy_name: str = "default",
         timeframes: list[str] = None,
+        rsi_limits: list[int] | None = None,
     ):
         self.logger = get_logger(self.__class__.__name__)
         self.logger.debug("__init__")
@@ -117,6 +116,22 @@ class CargaDescargaStrategy(StrategyPort):
             self.timeframes = ["1m", "15m", "1h"]
         else:
             self.timeframes = timeframes
+
+        # Set RSI limits: use provided or default
+        if rsi_limits is None:
+            self.rsi_limits = [15, 50, 85]
+        else:
+            # Validate RSI limits
+            if len(rsi_limits) != 3:
+                raise ValueError(f"rsi_limits must have exactly 3 values, got {len(rsi_limits)}")
+            if not all(0 <= v <= 100 for v in rsi_limits):
+                raise ValueError(f"All rsi_limits values must be in range 0-100, got {rsi_limits}")
+            if not (rsi_limits[0] < rsi_limits[1] < rsi_limits[2]):
+                self.logger.warning(
+                    f"RSI limits not in ascending order: {rsi_limits}. "
+                    "Expected [low, medium, high] with low < medium < high"
+                )
+            self.rsi_limits = rsi_limits
 
         self.market_data = market_data
         self.exchange = exchange

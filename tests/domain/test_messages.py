@@ -200,3 +200,70 @@ def test_start_backtest_request_timeframes_custom():
     )
     assert request.timeframes == ["1m", "15m"]
 
+
+def test_start_backtest_request_rsi_limits_default():
+    """Test StartBacktestRequest has None as default rsi_limits"""
+    request = StartBacktestRequest(
+        symbol="BTCUSDT",
+        start_time=1744023500000
+    )
+    assert request.rsi_limits is None
+
+
+def test_start_backtest_request_rsi_limits_custom():
+    """Test StartBacktestRequest accepts custom rsi_limits"""
+    request = StartBacktestRequest(
+        symbol="BTCUSDT",
+        start_time=1744023500000,
+        rsi_limits=[10, 50, 90]
+    )
+    assert request.rsi_limits == [10, 50, 90]
+
+
+def test_start_backtest_request_rsi_limits_validation_length():
+    """Test StartBacktestRequest validates rsi_limits has exactly 3 values"""
+    import pytest
+    from pydantic import ValidationError
+
+    # Test with 2 values - should fail
+    with pytest.raises(ValidationError) as exc_info:
+        StartBacktestRequest(
+            symbol="BTCUSDT",
+            start_time=1744023500000,
+            rsi_limits=[10, 50]
+        )
+    assert "exactly 3 values" in str(exc_info.value).lower() or "rsi_limits" in str(exc_info.value).lower()
+
+    # Test with 4 values - should fail
+    with pytest.raises(ValidationError) as exc_info:
+        StartBacktestRequest(
+            symbol="BTCUSDT",
+            start_time=1744023500000,
+            rsi_limits=[10, 50, 90, 95]
+        )
+    assert "exactly 3 values" in str(exc_info.value).lower() or "rsi_limits" in str(exc_info.value).lower()
+
+
+def test_start_backtest_request_rsi_limits_validation_range():
+    """Test StartBacktestRequest validates rsi_limits values are in range 0-100"""
+    import pytest
+    from pydantic import ValidationError
+
+    # Test with value < 0 - should fail
+    with pytest.raises(ValidationError) as exc_info:
+        StartBacktestRequest(
+            symbol="BTCUSDT",
+            start_time=1744023500000,
+            rsi_limits=[-10, 50, 90]
+        )
+    assert "range 0-100" in str(exc_info.value).lower() or "rsi_limits" in str(exc_info.value).lower()
+
+    # Test with value > 100 - should fail
+    with pytest.raises(ValidationError) as exc_info:
+        StartBacktestRequest(
+            symbol="BTCUSDT",
+            start_time=1744023500000,
+            rsi_limits=[10, 50, 110]
+        )
+    assert "range 0-100" in str(exc_info.value).lower() or "rsi_limits" in str(exc_info.value).lower()
+

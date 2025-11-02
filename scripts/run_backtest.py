@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Script para ejecutar backtests usando los agentes ADK"""
+
 import os
 
 # Configure pythonnet to use .NET Core instead of Mono (required on macOS)
@@ -45,7 +46,8 @@ def run_backtest(
     leverage: Decimal = Decimal("100"),
     max_notional: Decimal = Decimal("50000"),
     timeframes: list[str] = None,
-    **kwargs
+    rsi_limits: list[int] | None = None,
+    **kwargs,
 ):
     """Execute backtest using OrchestratorAgent"""
     print(f"🚀 Iniciando backtest para {symbol}...")
@@ -55,6 +57,8 @@ def run_backtest(
         print(f"   End time: {datetime.fromtimestamp(end_time / 1000)}")
     else:
         print("   End time: current")
+    if rsi_limits:
+        print(f"   RSI limits: {rsi_limits}")
 
     # Create orchestrator
     orchestrator = OrchestratorAgent(run_id=f"backtest_{int(datetime.now().timestamp() * 1000)}")
@@ -75,11 +79,14 @@ def run_backtest(
         strategy_name=strategy_name,
         run_id=orchestrator.run_id,  # Use orchestrator's run_id to avoid creating separate run logs
         timeframes=timeframes,
-        **kwargs
+        rsi_limits=rsi_limits,
+        **kwargs,
     )
 
-    # Create strategy factory with timeframes
-    strategy_factory = create_strategy_factory(strategy_name=strategy_name, timeframes=timeframes)
+    # Create strategy factory with timeframes and rsi_limits
+    strategy_factory = create_strategy_factory(
+        strategy_name=strategy_name, timeframes=timeframes, rsi_limits=rsi_limits
+    )
 
     try:
         # Execute backtest
@@ -117,7 +124,12 @@ def main():
     parser.add_argument("--initial-balance", type=Decimal, default=Decimal("2500"), help="Initial balance")
     parser.add_argument("--leverage", type=Decimal, default=Decimal("100"), help="Leverage")
     parser.add_argument("--max-notional", type=Decimal, default=Decimal("50000"), help="Max notional value")
-    parser.add_argument("--max-loss-percentage", type=float, default=0.5, help="Max loss percentage (0.5 = 50%)")
+    parser.add_argument(
+        "--max-loss-percentage",
+        type=float,
+        default=0.5,
+        help="Max loss percentage: 0.5 means 50 percent",
+    )
     parser.add_argument(
         "--stop-on-loss", action="store_true", default=True, help="Stop backtest if loss threshold reached"
     )
@@ -125,7 +137,17 @@ def main():
         "--timeframes",
         nargs="+",
         default=["1m", "15m", "1h"],
-        help="Timeframes to use (e.g., --timeframes 1m 15m 1h). Default: ['1m', '15m', '1h']",
+        help="Timeframes to use. Example: --timeframes 1m 15m 1h. Default: 1m 15m 1h",
+    )
+    parser.add_argument(
+        "--rsi-limits",
+        type=int,
+        nargs=3,
+        metavar=("LOW", "MEDIUM", "HIGH"),
+        help=(
+            "RSI threshold values: low, medium, high. Must be 3 integers in range 0-100. "
+            "Example: --rsi-limits 15 50 85. Default: 15 50 85"
+        ),
     )
 
     args = parser.parse_args()
@@ -146,9 +168,9 @@ def main():
         max_loss_percentage=args.max_loss_percentage,
         stop_on_loss=args.stop_on_loss,
         timeframes=args.timeframes,
+        rsi_limits=args.rsi_limits,
     )
 
 
 if __name__ == "__main__":
     main()
-

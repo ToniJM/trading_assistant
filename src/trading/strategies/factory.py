@@ -17,6 +17,7 @@ def create_strategy_factory(
     strategy_name: str = "carga_descarga",
     operations_status_repository: [OperationsStatusRepositoryPort] = None,
     timeframes: list[str] = None,
+    rsi_limits: list[int] | None = None,
 ) -> Callable:
     """Create a strategy factory function for BacktestRunner
 
@@ -24,6 +25,8 @@ def create_strategy_factory(
         strategy_name: Name of the strategy to use
         operations_status_repository: OperationsStatusRepository. If None, uses BacktestOperationsStatusRepository
         timeframes: List of timeframes to use. If None, strategy will use its default
+        rsi_limits: List of 3 RSI threshold values [low, medium, high].
+            If None, strategy will use its default [15, 50, 85]
 
     Returns:
         Factory function compatible with BacktestRunner.setup_exchange_and_strategy()
@@ -48,6 +51,7 @@ def create_strategy_factory(
                 cycle_dispatcher=cycle_dispatcher,
                 strategy_name=strategy_name,
                 timeframes=timeframes,
+                rsi_limits=rsi_limits,
             )
 
         return factory
