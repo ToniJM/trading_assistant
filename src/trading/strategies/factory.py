@@ -1,14 +1,21 @@
 """Strategy factory for creating trading strategies"""
+
 from collections.abc import Callable
 
-from trading.domain.ports import CycleListenerPort, ExchangePort, MarketDataPort, OperationsStatusRepositoryPort
+from trading.domain.ports import (
+    CycleListenerPort,
+    ExchangePort,
+    MarketDataPort,
+    OperationsStatusRepositoryPort,
+    StrategyPort,
+)
 from trading.infrastructure.backtest.adapters.operations_status_repository import BacktestOperationsStatusRepository
 from trading.strategies.carga_descarga.carga_descarga_strategy import CargaDescargaStrategy
 
 
 def create_strategy_factory(
     strategy_name: str = "carga_descarga",
-    operations_status_repository:[OperationsStatusRepositoryPort] = None,
+    operations_status_repository: [OperationsStatusRepositoryPort] = None,
 ) -> Callable:
     """Create a strategy factory function for BacktestRunner
 
@@ -27,7 +34,7 @@ def create_strategy_factory(
             market_data: MarketDataPort,
             cycle_dispatcher: CycleListenerPort,
             strategy_name: str,
-        ) -> CargaDescargaStrategy:
+        ) -> StrategyPort:
             # Use provided repository or create BacktestOperationsStatusRepository
             ops_repo = operations_status_repository or BacktestOperationsStatusRepository(symbol)
 
@@ -48,4 +55,3 @@ def create_strategy_factory(
 def get_available_strategies() -> list[str]:
     """Get list of available strategy names"""
     return ["carga_descarga", "default"]
-

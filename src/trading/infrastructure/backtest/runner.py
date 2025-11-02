@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from trading.domain.entities import Cycle, Trade
-from trading.domain.ports import ExchangePort, MarketDataPort
+from trading.domain.ports import ExchangePort, MarketDataPort, StrategyPort
 from trading.infrastructure.backtest.adapters.exchange_adapter import BacktestExchangeAdapter
 from trading.infrastructure.backtest.adapters.market_data_adapter import BacktestMarketDataAdapter
 from trading.infrastructure.backtest.config import (
@@ -63,7 +63,7 @@ class BacktestRunner:
         # Inicializar exchange y market data
         self.exchange:[ExchangePort] = None
         self.market_data:[MarketDataPort] = None
-        self.strategy = None
+        self.strategy:[StrategyPort] = None
         self.front = None
 
         # Métricas de rendimiento

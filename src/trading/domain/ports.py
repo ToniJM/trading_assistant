@@ -131,3 +131,41 @@ class CycleListenerPort(ABC):
         """Dispatch cycle completion event"""
         raise NotImplementedError
 
+
+class StrategyPort(ABC):
+    """Port for trading strategies (Hexagonal Architecture)
+
+    Defines the contract that all trading strategies must implement.
+    Strategies receive market data and trade events through callbacks.
+    """
+
+    @property
+    @abstractmethod
+    def symbol(self) -> str:
+        """Get the trading symbol this strategy operates on"""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def strategy_name(self) -> str:
+        """Get the name of this strategy"""
+        raise NotImplementedError
+
+    @abstractmethod
+    def on_kline(self, candle: Candle) -> None:
+        """Handle a complete candle event
+
+        Args:
+            candle: Complete price candle data
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def on_trade(self, trade: Trade) -> None:
+        """Handle a trade execution event
+
+        Args:
+            trade: Executed trade data
+        """
+        raise NotImplementedError
+

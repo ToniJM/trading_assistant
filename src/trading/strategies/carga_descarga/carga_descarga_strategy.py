@@ -5,7 +5,13 @@ import time
 from decimal import ROUND_DOWN, ROUND_UP, Decimal, getcontext
 
 from trading.domain.entities import Candle, Cycle, Order, Trade
-from trading.domain.ports import CycleListenerPort, ExchangePort, MarketDataPort, OperationsStatusRepositoryPort
+from trading.domain.ports import (
+    CycleListenerPort,
+    ExchangePort,
+    MarketDataPort,
+    OperationsStatusRepositoryPort,
+    StrategyPort,
+)
 from trading.domain.types import ORDER_SIDE_TYPE, ORDER_TYPE_TYPE, SIDE_TYPE
 from trading.infrastructure.logging import get_debug_logger, get_logger
 
@@ -87,7 +93,7 @@ def _get_rich():
     return Columns, Console, Panel
 
 
-class CargaDescargaStrategy:
+class CargaDescargaStrategy(StrategyPort):
     rsi_limits = [15, 50, 85]
     timeframes = ["1m", "15m", "1h"]
 
@@ -103,8 +109,8 @@ class CargaDescargaStrategy:
         self.logger = get_logger(self.__class__.__name__)
         self.logger.debug("__init__")
 
-        self.symbol = symbol
-        self.strategy_name = strategy_name
+        self._symbol = symbol
+        self._strategy_name = strategy_name
 
         self.market_data = market_data
         self.exchange = exchange
@@ -134,6 +140,16 @@ class CargaDescargaStrategy:
         self._current_cycle_short_trades = 0
         self._previous_long_amount = 0
         self._previous_short_amount = 0
+
+    @property
+    def symbol(self) -> str:
+        """Get the trading symbol this strategy operates on"""
+        return self._symbol
+
+    @property
+    def strategy_name(self) -> str:
+        """Get the name of this strategy"""
+        return self._strategy_name
 
     @method_logger()
     def on_trade(self, trade: Trade):
