@@ -7,6 +7,7 @@ from trading.domain.types import ORDER_SIDE_TYPE, ORDER_TYPE_TYPE, SIDE_TYPE
 from trading.infrastructure.exchange.adapters.event_dispatcher import EventDispatcher
 from trading.infrastructure.exchange.adapters.market_data_adapter import ExchangeMarketDataAdapter
 from trading.infrastructure.exchange.repositories import AccountRepository, OrdersRepository, TradesRepository
+from trading.infrastructure.logging import get_debug_logger
 
 
 class Exchange:
@@ -190,17 +191,42 @@ class Exchange:
 
     def _on_candle_update(self, candle: Candle):
         """Handle candle update - check and execute orders"""
+        debug_logger = get_debug_logger("exchange.debug")
         orders:[Order] = self.orders_repository.get_symbol_orders(candle.symbol)
 
         # Check for liquidation (simplified)
         long_position = self.get_position(candle.symbol, "long")
         short_position = self.get_position(candle.symbol, "short")
-        long_value = long_position.amount * (candle.low_price - long_position.entry_price)
-        short_value = short_position.amount * (candle.high_price - short_position.entry_price)
-        value = long_value + short_value
-        real_balance = self.get_balance() + value
+        
+        # Calculate unrealized P&L for long position (using worst case: low_price)
+        long_unrealized_pnl = Decimal(0)
+        if long_position.amount > 0:
+            long_unrealized_pnl = long_position.amount * (candle.low_price - long_position.entry_price)
+        
+        # Calculate unrealized P&L for short position (using worst case: high_price)
+        short_unrealized_pnl = Decimal(0)
+        if short_position.amount < 0:
+            short_unrealized_pnl = abs(short_position.amount) * (short_position.entry_price - candle.high_price)
+        
+        total_unrealized_pnl = long_unrealized_pnl + short_unrealized_pnl
+        balance = self.get_balance()
+        real_balance = balance + total_unrealized_pnl
+        
+        debug_logger.debug(
+            f"_on_candle_update DEBUG - balance={balance}, "
+            f"long_amount={long_position.amount}, long_entry={long_position.entry_price}, "
+            f"long_unrealized_pnl={long_unrealized_pnl}, "
+            f"short_amount={short_position.amount}, short_entry={short_position.entry_price}, "
+            f"short_unrealized_pnl={short_unrealized_pnl}, "
+            f"total_unrealized_pnl={total_unrealized_pnl}, "
+            f"real_balance={real_balance}"
+        )
 
         if real_balance < 0:
+            debug_logger.debug(
+                f"_on_candle_update DEBUG - LIQUIDATION TRIGGERED: "
+                f"real_balance={real_balance} < 0, setting balance to 0"
+            )
             # Liquidation - reset positions
             self.set_balance(Decimal(0))
             long_position = Position(
@@ -251,6 +277,9 @@ class Exchange:
 
     def _complete_order(self, order: Order, candle: Candle):
         """Complete order execution - create trade and update position"""
+        debug_logger = get_debug_logger("exchange.debug")
+        balance_before = self.account_repository.get_balance()
+        
         fee = self.maker_fee if order.type == "limit" else self.taker_fee
 
         trade_quantity = order.quantity
@@ -260,16 +289,71 @@ class Exchange:
 
         position = self.account_repository.get_position(order.symbol, order.position_side)
         value = order.quantity * (order.price - position.entry_price)
+        
+        # Debug: log before state
+        debug_logger.debug(
+            f"_complete_order DEBUG - order: {order.position_side} {order.side} "
+            f"qty={order.quantity} price={order.price}, balance_before={balance_before}, "
+            f"position_amount={position.amount}, entry_price={position.entry_price}"
+        )
 
         # Calculate realized P&L
         realized_pnl = Decimal(0)
+        is_opening_position = (order.position_side == "long" and order.side == "buy") or (
+            order.position_side == "short" and order.side == "sell"
+        )
+        is_closing_position = (order.position_side == "long" and order.side == "sell") or (
+            order.position_side == "short" and order.side == "buy"
+        )
+        
+        commission = abs(order.quantity * order.price * fee)
+        
+        # Update balance based on trade type
         if order.position_side == "long" and order.side == "sell":
-            self.account_repository.update_balance(value)
-            realized_pnl = value - abs(order.quantity * order.price * fee)
-        if order.position_side == "short" and order.side == "buy":
-            self.account_repository.update_balance(-value)
-            realized_pnl = -value - abs(order.quantity * order.price * fee)
-        self.account_repository.update_balance(-abs(order.quantity * order.price * fee))
+            # For long position close:
+            # - Add P&L (price difference * quantity)
+            # - Subtract commission
+            total_change = value - commission
+            debug_logger.debug(
+                f"_complete_order DEBUG - CLOSING long: value={value}, commission={commission}, "
+                f"total_balance_change={total_change}"
+            )
+            self.account_repository.update_balance(total_change)
+            realized_pnl = value - commission
+        elif order.position_side == "short" and order.side == "buy":
+            # For short position close:
+            # - Subtract P&L (negative for shorts: entry_price - exit_price)
+            # - Subtract commission
+            total_change = -value - commission
+            debug_logger.debug(
+                f"_complete_order DEBUG - CLOSING short: value={-value}, commission={commission}, "
+                f"total_balance_change={total_change}"
+            )
+            self.account_repository.update_balance(total_change)
+            realized_pnl = -value - commission
+        else:
+            # Opening position: deduct commission only
+            total_change = Decimal(0)
+            if is_opening_position:
+                total_change = -commission
+                debug_logger.debug(
+                    f"_complete_order DEBUG - OPENING position: commission={commission}, "
+                    f"total_balance_change={total_change}"
+                )
+                self.account_repository.update_balance(total_change)
+            else:
+                # Should not happen, but if it does, at least deduct commission
+                debug_logger.debug(
+                    f"_complete_order DEBUG - Unexpected case, deducting commission: {commission}"
+                )
+                self.account_repository.update_balance(-commission)
+        
+        balance_after = self.account_repository.get_balance()
+        debug_logger.debug(
+            f"_complete_order DEBUG - balance_before={balance_before}, "
+            f"balance_after={balance_after}, realized_pnl={realized_pnl}, "
+            f"total_change={balance_after - balance_before}"
+        )
 
         # Determine if position closes completely
         new_position_amount = position.amount + trade_quantity
@@ -313,16 +397,20 @@ class Exchange:
             # Update position entry price and break even
             if (position.side == "long" and trade.side == "buy") or (position.side == "short" and trade.side == "sell"):
                 # Opening position
+                # For entry price calculation, use absolute value of trade_size
+                # entry_price should always be positive (price at which position was opened)
+                trade_size_abs = abs(trade_size)
                 position.break_even = (
-                    ((position.break_even * abs(position.amount)) + trade_size) + (trade.commission * 2)
+                    ((position.break_even * abs(position.amount)) + trade_size_abs) + (trade.commission * 2)
                 ) / abs(new_position_amount)
                 position.entry_price = (
-                    ((position.entry_price * abs(position.amount)) + trade_size) / abs(new_position_amount)
+                    ((position.entry_price * abs(position.amount)) + trade_size_abs) / abs(new_position_amount)
                 )
             else:
                 # Closing position
+                trade_size_abs = abs(trade_size)
                 position.break_even = (
-                    ((position.break_even * abs(position.amount)) + trade_size) / abs(new_position_amount)
+                    ((position.break_even * abs(position.amount)) + trade_size_abs) / abs(new_position_amount)
                 )
 
             position.add_trade(trade)

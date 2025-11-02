@@ -1,4 +1,5 @@
 """CargaDescarga trading strategy"""
+
 import datetime
 import time
 from decimal import ROUND_DOWN, ROUND_UP, Decimal, getcontext
@@ -31,13 +32,16 @@ def _get_indicators():
     try:
         debug_logger.debug("_get_indicators(): importando stock_indicators.indicators.stoch_rsi.get_stoch_rsi...")
         from stock_indicators.indicators.stoch_rsi import get_stoch_rsi
+
         debug_logger.debug("_get_indicators(): get_stoch_rsi importado exitosamente")
 
         debug_logger.debug("_get_indicators(): importando stock_indicators.indicators.fractal.get_fractal...")
         from stock_indicators.indicators.fractal import get_fractal
+
         debug_logger.debug("_get_indicators(): get_fractal importado exitosamente")
 
         debug_logger.debug("_get_indicators(): creando clase Indicators...")
+
         # Return a simple object with only the functions we need
         class Indicators:
             @staticmethod
@@ -66,16 +70,20 @@ def _get_indicators():
         debug_logger.error(f"_get_indicators(): traceback: {e.__traceback__}")
         raise
 
+
 def _get_quote():
     """Lazy import for Quote"""
     from stock_indicators.indicators.common.quote import Quote
+
     return Quote
+
 
 def _get_rich():
     """Lazy import for rich (only used for rendering)"""
     from rich.columns import Columns
     from rich.console import Console
     from rich.panel import Panel
+
     return Columns, Console, Panel
 
 
@@ -129,15 +137,38 @@ class CargaDescargaStrategy:
 
     @method_logger()
     def on_trade(self, trade: Trade):
+        debug_logger = get_debug_logger("strategy.debug")
+
         self.logger.info(f"Trade: {trade.symbol} {trade.position_side} {trade.side} {trade.quantity} {trade.price}")
+
+        # Debug logs para diagnosticar realized_pnl
+        debug_logger.debug(
+            f"on_trade DEBUG - trade.symbol={trade.symbol}, "
+            f"trade.position_side={trade.position_side}, trade.side={trade.side}"
+        )
+        debug_logger.debug(f"on_trade DEBUG - trade.quantity={trade.quantity}, trade.price={trade.price}")
+        debug_logger.debug(
+            f"on_trade DEBUG - trade.realized_pnl value={trade.realized_pnl}, type={type(trade.realized_pnl)}"
+        )
+        debug_logger.debug(
+            f"on_trade DEBUG - trade.realized_pnl as float={float(trade.realized_pnl)}, "
+            f"as str={str(trade.realized_pnl)}"
+        )
+        debug_logger.debug(f"on_trade DEBUG - trade.realized_pnl != 0: {trade.realized_pnl != 0}")
+        debug_logger.debug(f"on_trade DEBUG - trade.realized_pnl != Decimal(0): {trade.realized_pnl != Decimal(0)}")
+        debug_logger.debug(f"on_trade DEBUG - bool(trade.realized_pnl): {bool(trade.realized_pnl)}")
+        debug_logger.debug(f"on_trade DEBUG - trade.closes_position_completely={trade.closes_position_completely}")
 
         # Log PnL when trade closes position (total or partial)
         if trade.realized_pnl != 0:
+            debug_logger.debug("on_trade DEBUG - ENTERING if trade.realized_pnl != 0 block")
             close_type = "complete" if trade.closes_position_completely else "partial"
             self.logger.info(
                 f"Position close ({close_type}): {trade.symbol} {trade.position_side} "
                 f"PnL={trade.realized_pnl} quantity={trade.quantity} price={trade.price}"
             )
+        else:
+            debug_logger.debug("on_trade DEBUG - NOT entering if trade.realized_pnl != 0 block (realized_pnl is 0)")
 
         self.operations_status.set_operation_status(trade.position_side, trade.side, True)
 
@@ -172,8 +203,7 @@ class CargaDescargaStrategy:
         long_position = self.exchange.get_position(self.symbol, "long")
         short_position = self.exchange.get_position(self.symbol, "short")
         debug_logger.debug(
-            f"Posiciones obtenidas: long_amount={long_position.amount}, "
-            f"short_amount={short_position.amount}"
+            f"Posiciones obtenidas: long_amount={long_position.amount}, short_amount={short_position.amount}"
         )
 
         self.render_data["long_position"] = long_position
@@ -609,7 +639,7 @@ class CargaDescargaStrategy:
         last_down = price
         for i in range(len(self.timeframes)):
             timeframe = self.timeframes[i]
-            timeframe_info = f"timeframe {i+1}/{len(self.timeframes)}: {timeframe}"
+            timeframe_info = f"timeframe {i + 1}/{len(self.timeframes)}: {timeframe}"
             debug_logger.debug(f"get_posible_prices({price}): obteniendo fractales para {timeframe_info}")
             fractals = self._get_fractals(timeframe)
             debug_logger.debug(f"get_posible_prices({price}): obtenidos {len(fractals)} fractales para {timeframe}")
@@ -876,4 +906,3 @@ class CargaDescargaStrategy:
         self._current_cycle_short_max_loads = 0
         self._current_cycle_long_trades = 0
         self._current_cycle_short_trades = 0
-

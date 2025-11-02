@@ -1,4 +1,5 @@
 """Market data simulator for backtests"""
+
 import time
 from datetime import datetime
 
@@ -19,15 +20,15 @@ class MarketDataSimulator:
         self.candles_repo = CandlesRepository(is_backtest=is_backtest)
         self.market_data = MarketDataAdapter()
 
-        self.symbols_timeframes:[str[TIMEFRAME_TYPE]] = {}
+        self.symbols_timeframes: [str[TIMEFRAME_TYPE]] = {}
         self.start_time: int = 0
         self.end_time: int = 0
         self.min_candles: int = 0
         self.current_time: int = 0
 
-        self.cumulative_candles:[str[TIMEFRAME_TYPE, Candle]] = {}
-        self.endeds:[str, bool] = {}
-        self.last_candle:[str[TIMEFRAME_TYPE, Candle]] = {}
+        self.cumulative_candles: [str[TIMEFRAME_TYPE, Candle]] = {}
+        self.endeds: [str, bool] = {}
+        self.last_candle: [str[TIMEFRAME_TYPE, Candle]] = {}
 
     def ended(self, symbol: str) -> bool:
         """Check if simulation has ended for symbol"""
@@ -38,8 +39,7 @@ class MarketDataSimulator:
         if result:
             debug_logger = get_debug_logger("simulator.debug")
             debug_logger.debug(
-                f"ended({symbol}) retornando True - "
-                f"current_time={self.current_time}, end_time={self.end_time}"
+                f"ended({symbol}) retornando True - current_time={self.current_time}, end_time={self.end_time}"
             )
         return result
 
@@ -47,19 +47,53 @@ class MarketDataSimulator:
         """Mark symbol simulation as ended"""
         self.endeds[symbol] = True
 
-    def set_times(self, start: int, end:[int] = None, min_candles: int = 10):
-        """Set simulation time range"""
+    def set_times(self, start: int, end: [int] = None, min_candles: int = 10):
+        """Set simulation time range
+
+        Ensures end_time is always less than current system time to prevent
+        attempting to fetch future candles that don't exist yet.
+        """
         self.start_time = start
         self.current_time = start
-        self.end_time = end if end else int(time.time() * 1000)
         self.min_candles = min_candles
+
+        # Get current system time
+        current_system_time = int(time.time() * 1000)
+
+        # Calculate safe end_time: current time - 1 minute margin
+        safe_end_time = current_system_time - ONE_MINUTE
+
+        # Determine end_time based on provided value
+        if end is None:
+            # If no end specified, use safe end time (current - 1 minute)
+            self.end_time = safe_end_time
+        else:
+            # If end is specified, ensure it's less than current system time
+            if end >= current_system_time:
+                # WARNING: end_time >= current time, adjusting to safe_end_time
+                logger = get_logger("simulator")
+                original_end = end
+                self.end_time = safe_end_time
+                original_end_dt = datetime.fromtimestamp(original_end / 1000)
+                current_dt = datetime.fromtimestamp(current_system_time / 1000)
+                safe_end_dt = datetime.fromtimestamp(self.end_time / 1000)
+                logger.warning(
+                    f"end_time ({original_end} = {original_end_dt}) "
+                    f">= current system time ({current_system_time} = {current_dt}), "
+                    f"ajustando a safe_end_time ({self.end_time} = {safe_end_dt}) "
+                    f"para evitar intentar obtener velas futuras inexistentes"
+                )
+            else:
+                # end is valid (less than current time)
+                self.end_time = end
 
         # INFO: configuración importante del simulador (sin prefijo [DEBUG])
         logger = get_logger("simulator")
         logger.info(
             f"Configurando tiempos del simulador: "
-            f"start={start} ({datetime.fromtimestamp(start/1000)}), "
-            f"end={self.end_time} ({datetime.fromtimestamp(self.end_time/1000)}), "
+            f"start={start} ({datetime.fromtimestamp(start / 1000)}), "
+            f"end={self.end_time} ({datetime.fromtimestamp(self.end_time / 1000)}), "
+            f"current_system_time={current_system_time} ({datetime.fromtimestamp(current_system_time / 1000)}), "
             f"duration={self.end_time - start}ms"
         )
 
@@ -71,9 +105,9 @@ class MarketDataSimulator:
             # DEBUG: detalles internos de next_candle()
             debug_logger.debug(
                 f"next_candle() para {symbol}: "
-                f"current_time={self.current_time} ({datetime.fromtimestamp(self.current_time/1000)}), "
-                f"start_time={self.start_time} ({datetime.fromtimestamp(self.start_time/1000)}), "
-                f"end_time={self.end_time} ({datetime.fromtimestamp(self.end_time/1000)}), "
+                f"current_time={self.current_time} ({datetime.fromtimestamp(self.current_time / 1000)}), "
+                f"start_time={self.start_time} ({datetime.fromtimestamp(self.start_time / 1000)}), "
+                f"end_time={self.end_time} ({datetime.fromtimestamp(self.end_time / 1000)}), "
                 f"ended={self.ended(symbol)}"
             )
 
@@ -103,7 +137,7 @@ class MarketDataSimulator:
                 )
                 self.end(symbol)
 
-    def _next_candle(self, symbol: str, timeframes:[TIMEFRAME_TYPE], dispatch: bool = True) -> Candle:
+    def _next_candle(self, symbol: str, timeframes: [TIMEFRAME_TYPE], dispatch: bool = True) -> Candle:
         """Get next candle for symbol"""
         debug_logger = get_debug_logger("simulator.debug")
         logger = get_logger("simulator")
@@ -114,15 +148,14 @@ class MarketDataSimulator:
         # DEBUG: valores internos de _next_candle()
         debug_logger.debug(
             f"_next_candle({symbol}): "
-            f"current_time={self.current_time} ({datetime.fromtimestamp(self.current_time/1000)}), "
+            f"current_time={self.current_time} ({datetime.fromtimestamp(self.current_time / 1000)}), "
             f"ended={self.ended(symbol)}"
         )
 
         candle = self.candles_repo.get_next_candle(symbol, self.current_time)
         # DEBUG: resultado de get_next_candle()
         debug_logger.debug(
-            f"get_next_candle retornó: {candle is not None}, "
-            f"timestamp={candle.timestamp if candle else None}"
+            f"get_next_candle retornó: {candle is not None}, timestamp={candle.timestamp if candle else None}"
         )
 
         if candle is None:
@@ -138,7 +171,7 @@ class MarketDataSimulator:
                 # ERROR: error crítico - no hay velas disponibles
                 logger.error(
                     f"No se encontraron velas para {symbol} en {self.current_time} "
-                    f"({datetime.fromtimestamp(self.current_time/1000)})"
+                    f"({datetime.fromtimestamp(self.current_time / 1000)})"
                 )
                 raise ValueError(f"No candles available for {symbol} at {self.current_time}")
         elif candle.timestamp > self.current_time + ONE_MINUTE:
@@ -151,9 +184,7 @@ class MarketDataSimulator:
             candle = candles[0] if candles else candle
 
         # DEBUG: antes de dispatch
-        debug_logger.debug(
-            f"Antes de dispatch: candle={candle.timestamp if candle else None}, dispatch={dispatch}"
-        )
+        debug_logger.debug(f"Antes de dispatch: candle={candle.timestamp if candle else None}, dispatch={dispatch}")
 
         if dispatch:
             debug_logger.debug(f"Dispatching candle para {symbol}, timestamp={candle.timestamp}")
@@ -180,10 +211,10 @@ class MarketDataSimulator:
                         self.last_candle[symbol][timeframe] is None
                         or timeframe_candle.timestamp > self.last_candle[symbol][timeframe].timestamp
                     ):
-                            self.last_candle[symbol][timeframe] = timeframe_candle
-                            debug_logger.debug(f"Dispatching candle {timeframe} para {symbol}")
-                            self.event_dispatcher.dispatch_complete_candle(timeframe_candle)
-                            debug_logger.debug(f"Candle {timeframe} dispatched exitosamente")
+                        self.last_candle[symbol][timeframe] = timeframe_candle
+                        debug_logger.debug(f"Dispatching candle {timeframe} para {symbol}")
+                        self.event_dispatcher.dispatch_complete_candle(timeframe_candle)
+                        debug_logger.debug(f"Candle {timeframe} dispatched exitosamente")
 
         # DEBUG: retorno de _next_candle()
         debug_logger.debug(f"_next_candle retornando: timestamp={candle.timestamp if candle else None}")
@@ -193,7 +224,7 @@ class MarketDataSimulator:
         """Get symbol information"""
         return self.market_data.get_symbol_info(symbol)
 
-    def get_candles(self, symbol: str, timeframe: TIMEFRAME_TYPE, limit: int) ->[Candle]:
+    def get_candles(self, symbol: str, timeframe: TIMEFRAME_TYPE, limit: int) -> [Candle]:
         """Get historical candles for symbol and timeframe"""
         debug_logger = get_debug_logger("simulator.debug")
         debug_logger.debug(f"get_candles({symbol}, {timeframe}, {limit}): iniciando")
@@ -233,8 +264,7 @@ class MarketDataSimulator:
 
         if candles and candles[-1].timestamp > end_time + ONE_MINUTE:
             debug_logger.debug(
-                f"get_candles({symbol}, {timeframe}, {limit}): "
-                f"última vela fuera de rango, reobteniendo desde API..."
+                f"get_candles({symbol}, {timeframe}, {limit}): última vela fuera de rango, reobteniendo desde API..."
             )
             candles_from_api = self.market_data.get_candles(symbol, timeframe, 1000, start_time)
             debug_logger.debug(
@@ -284,4 +314,3 @@ class MarketDataSimulator:
 
         if hasattr(self, "candles_repo") and self.candles_repo:
             self.candles_repo.close()
-
