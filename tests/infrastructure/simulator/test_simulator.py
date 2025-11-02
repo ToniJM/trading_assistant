@@ -2,6 +2,7 @@
 
 from trading.infrastructure.simulator import MarketDataSimulator
 from trading.infrastructure.simulator.domain import ONE_MINUTE, TIMEFRAME_MINUTES
+from trading.infrastructure.simulator.simulator import get_base_timeframe
 
 
 def test_simulator_initialization():
@@ -61,4 +62,62 @@ def test_simulator_event_dispatcher():
 
     # Test removing listener
     simulator.event_dispatcher.remove_complete_candle_listener("BTCUSDT", "1m", listener)
+
+
+def test_get_base_timeframe_single_timeframe():
+    """Test get_base_timeframe with a single valid timeframe"""
+    result = get_base_timeframe(["1m"])
+    assert result == "1m"
+
+    result = get_base_timeframe(["15m"])
+    assert result == "15m"
+
+    result = get_base_timeframe(["1h"])
+    assert result == "1h"
+
+
+def test_get_base_timeframe_multiple_timeframes():
+    """Test get_base_timeframe with multiple timeframes, should return shortest"""
+    result = get_base_timeframe(["1m", "15m", "1h"])
+    assert result == "1m"
+
+    result = get_base_timeframe(["3m", "15m", "1h"])
+    assert result == "3m"
+
+    result = get_base_timeframe(["15m", "1h", "4h"])
+    assert result == "15m"
+
+
+def test_get_base_timeframe_empty_list():
+    """Test get_base_timeframe with empty list, should return default "1m" """
+    result = get_base_timeframe([])
+    assert result == "1m"
+
+
+def test_get_base_timeframe_invalid_timeframes():
+    """Test get_base_timeframe with invalid timeframes, should return default "1m" """
+    result = get_base_timeframe(["invalid"])
+    assert result == "1m"
+
+    result = get_base_timeframe(["xxx", "yyy"])
+    assert result == "1m"
+
+
+def test_get_base_timeframe_mixed_valid_invalid():
+    """Test get_base_timeframe with mixed valid and invalid timeframes, should use only valid ones"""
+    result = get_base_timeframe(["invalid", "15m", "invalid2", "1h"])
+    assert result == "15m"
+
+    result = get_base_timeframe(["invalid", "3m", "15m"])
+    assert result == "3m"
+
+
+def test_get_base_timeframe_ordering():
+    """Test get_base_timeframe returns the shortest timeframe correctly"""
+    # Test ordering: 1m < 3m < 5m < 15m < 30m < 1h
+    assert get_base_timeframe(["1m", "3m"]) == "1m"
+    assert get_base_timeframe(["3m", "1m"]) == "1m"
+    assert get_base_timeframe(["15m", "3m", "1h"]) == "3m"
+    assert get_base_timeframe(["1h", "30m", "15m"]) == "15m"
+    assert get_base_timeframe(["5m", "3m", "1m"]) == "1m"
 

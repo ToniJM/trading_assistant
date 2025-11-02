@@ -1,7 +1,10 @@
 """Tests for backtest configuration"""
+
 from decimal import Decimal
 
-from trading.infrastructure.backtest.config import BacktestConfig, BacktestConfigs, BacktestResults
+import pytest
+
+from trading.infrastructure.backtest.config import BacktestConfig, BacktestConfigs, BacktestResults, validate_timeframes
 
 
 def test_backtest_config_creation():
@@ -95,3 +98,80 @@ def test_backtest_results_creation():
     assert results.win_rate == 60.0
     assert results.total_cycles == 5
 
+
+def test_validate_timeframes_count_2():
+    """Test validate_timeframes accepts 2 timeframes"""
+    result = validate_timeframes(["1m", "15m"])
+    assert result == ["1m", "15m"]
+
+    result = validate_timeframes(["3m", "1h"])
+    assert result == ["3m", "1h"]
+
+
+def test_validate_timeframes_count_3():
+    """Test validate_timeframes accepts 3 timeframes"""
+    result = validate_timeframes(["1m", "15m", "1h"])
+    assert result == ["1m", "15m", "1h"]
+
+    result = validate_timeframes(["3m", "15m", "1h"])
+    assert result == ["3m", "15m", "1h"]
+
+
+def test_validate_timeframes_count_4():
+    """Test validate_timeframes accepts 4 timeframes"""
+    result = validate_timeframes(["1m", "5m", "15m", "1h"])
+    assert result == ["1m", "5m", "15m", "1h"]
+
+    result = validate_timeframes(["3m", "15m", "1h", "4h"])
+    assert result == ["3m", "15m", "1h", "4h"]
+
+
+def test_validate_timeframes_count_invalid():
+    """Test validate_timeframes rejects invalid counts (1, 5 or more)"""
+    with pytest.raises(ValueError, match="Number of timeframes must be 2, 3 or 4"):
+        validate_timeframes(["1m"])
+
+    with pytest.raises(ValueError, match="Number of timeframes must be 2, 3 or 4"):
+        validate_timeframes(["1m", "15m", "1h", "4h", "1d"])
+
+    # Empty list raises different error message
+    with pytest.raises(ValueError, match="At least one timeframe must be provided"):
+        validate_timeframes([])
+
+
+def test_validate_timeframes_invalid_strings():
+    """Test validate_timeframes rejects invalid timeframe strings"""
+    with pytest.raises(ValueError, match="Invalid timeframes"):
+        validate_timeframes(["invalid", "15m"])
+
+    with pytest.raises(ValueError, match="Invalid timeframes"):
+        validate_timeframes(["1m", "invalid"])
+
+    with pytest.raises(ValueError, match="Invalid timeframes"):
+        validate_timeframes(["xxx", "yyy"])
+
+
+def test_backtest_config_timeframes_default():
+    """Test BacktestConfig has default timeframes"""
+    config = BacktestConfig(symbol="BTCUSDT", start_time=1744023500000)
+    assert config.timeframes == ["1m", "15m", "1h"]
+
+
+def test_backtest_config_timeframes_custom():
+    """Test BacktestConfig accepts custom timeframes"""
+    config = BacktestConfig(symbol="BTCUSDT", start_time=1744023500000, timeframes=["3m", "15m", "1h"])
+    assert config.timeframes == ["3m", "15m", "1h"]
+
+    config = BacktestConfig(symbol="BTCUSDT", start_time=1744023500000, timeframes=["1m", "15m"])
+    assert config.timeframes == ["1m", "15m"]
+
+
+def test_backtest_config_timeframes_validation_on_init():
+    """Test BacktestConfig validates timeframes on initialization"""
+    # Should raise error for invalid count
+    with pytest.raises(ValueError, match="Number of timeframes must be 2, 3 or 4"):
+        BacktestConfig(symbol="BTCUSDT", start_time=1744023500000, timeframes=["1m"])
+
+    # Should raise error for invalid timeframe strings
+    with pytest.raises(ValueError, match="Invalid timeframes"):
+        BacktestConfig(symbol="BTCUSDT", start_time=1744023500000, timeframes=["invalid", "15m"])

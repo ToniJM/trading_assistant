@@ -174,3 +174,29 @@ def test_message_json_serialization():
     assert "BTCUSDT" in json_str
     assert "2500" in json_str  # Default balance
 
+
+def test_start_backtest_request_timeframes_default():
+    """Test StartBacktestRequest has default timeframes"""
+    request = StartBacktestRequest(
+        symbol="BTCUSDT",
+        start_time=1744023500000
+    )
+    assert request.timeframes == ["1m", "15m", "1h"]
+
+
+def test_start_backtest_request_timeframes_custom():
+    """Test StartBacktestRequest accepts custom timeframes"""
+    request = StartBacktestRequest(
+        symbol="BTCUSDT",
+        start_time=1744023500000,
+        timeframes=["3m", "15m", "1h"]
+    )
+    assert request.timeframes == ["3m", "15m", "1h"]
+
+    request = StartBacktestRequest(
+        symbol="BTCUSDT",
+        start_time=1744023500000,
+        timeframes=["1m", "15m"]
+    )
+    assert request.timeframes == ["1m", "15m"]
+
