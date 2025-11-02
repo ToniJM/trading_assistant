@@ -24,7 +24,10 @@ class StartBacktestRequest(BaseModel):
     stop_on_loss: bool = Field(True, description="Stop backtest if loss threshold reached")
     max_loss_percentage: float = Field(0.5, description="Maximum loss percentage (0.5 = 50%)")
     track_cycles: bool = Field(True, description="Track trading cycles")
-    timeframes: list[str] = Field(default_factory=lambda: ["1m", "15m", "1h"], description="List of timeframes to use (e.g., ['1m', '15m', '1h'])")
+    timeframes: list[str] = Field(
+        default_factory=lambda: ["1m", "15m", "1h"],
+        description="List of timeframes to use (e.g., ['1m', '15m', '1h'])",
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -207,7 +210,7 @@ class ErrorResponse(BaseModel):
 
     error_code: str = Field(..., description="Error code")
     error_message: str = Field(..., description="Human-readable error message")
-    error_details: list[Any] | None = Field(None, description="Additional error details")
+    error_details: dict[str, Any] | None = Field(None, description="Additional error details")
     run_id: str | None = Field(None, description="Run identifier if applicable")
 
     model_config = ConfigDict(

@@ -111,7 +111,7 @@ class CargaDescargaStrategy(StrategyPort):
 
         self._symbol = symbol
         self._strategy_name = strategy_name
-        
+
         # Set timeframes: use provided or default
         if timeframes is None:
             self.timeframes = ["1m", "15m", "1h"]
@@ -156,6 +156,64 @@ class CargaDescargaStrategy(StrategyPort):
     def strategy_name(self) -> str:
         """Get the name of this strategy"""
         return self._strategy_name
+
+    def _get_loads_per_timeframe(self) -> int:
+        """Calculate how many loads correspond to each timeframe
+
+        Assumes a fixed total of 9 loads (3 timeframes × 3 loads).
+        Distributes loads proportionally based on number of timeframes.
+
+        Returns:
+            Number of loads per timeframe
+        """
+        total_loads = 9  # Fixed total: 3 timeframes × 3 loads
+        num_timeframes = len(self.timeframes)
+        return total_loads // num_timeframes
+
+    def _calculate_timeframe_index(self, loads: int) -> int:
+        """Calculate the timeframe index based on the number of loads
+
+        Args:
+            loads: Current number of loads
+
+        Returns:
+            Index of the timeframe to use (0-based)
+        """
+        loads_per_tf = self._get_loads_per_timeframe()
+        max_index = len(self.timeframes) - 1
+        return min(loads // loads_per_tf, max_index)
+
+    def _is_last_tf_load(self, loads: int) -> bool:
+        """Detect if the current load completes a group for the current timeframe
+
+        Args:
+            loads: Current number of loads
+
+        Returns:
+            True if this is the last load of a timeframe group, False otherwise
+        """
+        if loads == 0:
+            return False
+        loads_per_tf = self._get_loads_per_timeframe()
+        return loads % loads_per_tf == 0
+
+    def _get_threshold_loads(self, base_threshold: int) -> int:
+        """Scale threshold loads proportionally based on number of timeframes
+
+        Args:
+            base_threshold: Base threshold value (for 3 timeframes)
+
+        Returns:
+            Scaled threshold value for current number of timeframes
+        """
+        # Scale proportionally: base_threshold * (num_timeframes / 3)
+        # For 3 timeframes (default), returns base_threshold unchanged
+        # For 2 timeframes, returns base_threshold * (2/3) = 0.67 * base_threshold
+        # For 4 timeframes, returns base_threshold * (4/3) = 1.33 * base_threshold
+        scale_factor = len(self.timeframes) / 3
+        scaled = int(base_threshold * scale_factor)
+        # Ensure at least 1 for small values
+        return max(1, scaled)
 
     @method_logger()
     def on_trade(self, trade: Trade):
@@ -240,19 +298,23 @@ class CargaDescargaStrategy(StrategyPort):
         long_loads = long_position.get_load_count()
         short_loads = short_position.get_load_count(min_amount)
 
-        long_tf = min(long_loads // 3, 2)
-        short_tf = min(short_loads // 3, 2)
-        is_long_last_tf_load = long_loads % 3 == 0 if long_loads > 0 else False
-        is_short_last_tf_load = short_loads % 3 == 0 if short_loads > 0 else False
+        long_tf = self._calculate_timeframe_index(long_loads)
+        short_tf = self._calculate_timeframe_index(short_loads)
+        is_long_last_tf_load = self._is_last_tf_load(long_loads)
+        is_short_last_tf_load = self._is_last_tf_load(short_loads)
         r = max(long_tf, short_tf)
+        # Ensure r doesn't exceed available timeframes
+        r = min(r, len(self.timeframes) - 1)
         increase_long = True
         decrease_long = True
         increase_short = True
         decrease_short = True
 
+        loads_per_tf = self._get_loads_per_timeframe()
         debug_logger.debug(
             f"Cálculos iniciales completados: long_loads={long_loads}, short_loads={short_loads}, "
-            f"long_tf={long_tf}, short_tf={short_tf}, r={r}"
+            f"long_tf={long_tf}, short_tf={short_tf}, r={r}, loads_per_tf={loads_per_tf}, "
+            f"num_timeframes={len(self.timeframes)}"
         )
 
         long_commission = long_position.commission
@@ -270,11 +332,12 @@ class CargaDescargaStrategy(StrategyPort):
             debug_logger.debug("cancel_orders(short, buy) - condición 1")
             self.cancel_orders("short", "buy")
 
-        if long_loads >= 3 and candle.close_price > long_position.entry_price - (long_commission * 2):
+        threshold_loads = self._get_threshold_loads(3)
+        if long_loads >= threshold_loads and candle.close_price > long_position.entry_price - (long_commission * 2):
             increase_long = False
             debug_logger.debug("cancel_orders(long, buy) - condición 2")
             self.cancel_orders("long", "buy")
-        if short_loads >= 3 and candle.close_price < short_position.entry_price + (short_commission * 2):
+        if short_loads >= threshold_loads and candle.close_price < short_position.entry_price + (short_commission * 2):
             increase_short = False
             debug_logger.debug("cancel_orders(short, sell) - condición 2")
             self.cancel_orders("short", "sell")
@@ -360,7 +423,8 @@ class CargaDescargaStrategy(StrategyPort):
             )  # Valor de la posición short
             positions_value = long_value + short_value
 
-            if long_loads >= 4 and short_loads >= 4:
+            threshold_loads_4 = self._get_threshold_loads(4)
+            if long_loads >= threshold_loads_4 and short_loads >= threshold_loads_4:
                 if increase_long and decrease_short and positions_value > 0:
                     if long_loads <= short_loads:
                         increase_long = False

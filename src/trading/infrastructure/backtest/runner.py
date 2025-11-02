@@ -413,10 +413,16 @@ class BacktestRunner:
             )
 
         sum_realized = sum(t.realized_pnl for t in trades)
-        expected_return = results.total_return + results.total_commission
+        # total_return ya incluye todo: profits de cierres - todas las comisiones (apertura + cierre)
+        # sum_realized solo incluye: profits de cierres - comisiones de cierres
+        # Las comisiones de apertura se restan del balance pero no están en realized_pnl
+        # Por lo tanto: sum_realized = total_return + opening_commissions
+        opening_commissions = sum(abs(t.commission) for t in trades if t.realized_pnl == 0)
+        expected_return = results.total_return + opening_commissions
         if abs(float(sum_realized - expected_return)) > 0.01:
             warnings.append(
-                f"P&L inconsistency: sum realized_pnl {sum_realized} != return + commission {expected_return}"
+                f"P&L inconsistency: sum realized_pnl {sum_realized} != "
+                f"total_return {results.total_return} + opening_commissions {opening_commissions} = {expected_return}"
             )
 
         expected_wr = (

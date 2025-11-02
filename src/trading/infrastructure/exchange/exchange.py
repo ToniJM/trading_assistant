@@ -186,7 +186,9 @@ class Exchange:
 
         orders = self.orders_repository.get_symbol_orders(order.symbol)
         if len(orders) == 0:
-            self.market_data_adapter.remove_internal_candle_listener(order.symbol, self.base_timeframe, self._on_candle_update)
+            self.market_data_adapter.remove_internal_candle_listener(
+                order.symbol, self.base_timeframe, self._on_candle_update
+            )
 
         return deleted
 
@@ -206,21 +208,21 @@ class Exchange:
         # Check for liquidation (simplified)
         long_position = self.get_position(candle.symbol, "long")
         short_position = self.get_position(candle.symbol, "short")
-        
+
         # Calculate unrealized P&L for long position (using worst case: low_price)
         long_unrealized_pnl = Decimal(0)
         if long_position.amount > 0:
             long_unrealized_pnl = long_position.amount * (candle.low_price - long_position.entry_price)
-        
+
         # Calculate unrealized P&L for short position (using worst case: high_price)
         short_unrealized_pnl = Decimal(0)
         if short_position.amount < 0:
             short_unrealized_pnl = abs(short_position.amount) * (short_position.entry_price - candle.high_price)
-        
+
         total_unrealized_pnl = long_unrealized_pnl + short_unrealized_pnl
         balance = self.get_balance()
         real_balance = balance + total_unrealized_pnl
-        
+
         debug_logger.debug(
             f"_on_candle_update DEBUG - balance={balance}, "
             f"long_amount={long_position.amount}, long_entry={long_position.entry_price}, "
@@ -288,7 +290,7 @@ class Exchange:
         """Complete order execution - create trade and update position"""
         debug_logger = get_debug_logger("exchange.debug")
         balance_before = self.account_repository.get_balance()
-        
+
         fee = self.maker_fee if order.type == "limit" else self.taker_fee
 
         trade_quantity = order.quantity
@@ -298,7 +300,7 @@ class Exchange:
 
         position = self.account_repository.get_position(order.symbol, order.position_side)
         value = order.quantity * (order.price - position.entry_price)
-        
+
         # Debug: log before state
         debug_logger.debug(
             f"_complete_order DEBUG - order: {order.position_side} {order.side} "
@@ -311,12 +313,9 @@ class Exchange:
         is_opening_position = (order.position_side == "long" and order.side == "buy") or (
             order.position_side == "short" and order.side == "sell"
         )
-        is_closing_position = (order.position_side == "long" and order.side == "sell") or (
-            order.position_side == "short" and order.side == "buy"
-        )
-        
+
         commission = abs(order.quantity * order.price * fee)
-        
+
         # Update balance based on trade type
         if order.position_side == "long" and order.side == "sell":
             # For long position close:
@@ -356,7 +355,7 @@ class Exchange:
                     f"_complete_order DEBUG - Unexpected case, deducting commission: {commission}"
                 )
                 self.account_repository.update_balance(-commission)
-        
+
         balance_after = self.account_repository.get_balance()
         debug_logger.debug(
             f"_complete_order DEBUG - balance_before={balance_before}, "
