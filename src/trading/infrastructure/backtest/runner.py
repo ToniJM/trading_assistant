@@ -72,8 +72,9 @@ class BacktestRunner:
         self.last_progress_update = 0
         self.progress_update_interval = 1000
 
-        # Tracking de balance histórico
-        self.balance_history: list[tuple[int, Decimal]] = []
+        # Tracking de max drawdown basado en unrealized PnL
+        self.max_unrealized_pnl_loss = Decimal(0)
+        self.last_base_candle = None  # Último candle del timeframe base procesado
 
         # Cycle tracking
         self.cycles_repository = CyclesRepository() if config.track_cycles else None
@@ -152,6 +153,10 @@ class BacktestRunner:
         if self.config.track_cycles and self.cycle_dispatcher:
             self.cycle_dispatcher.add_cycle_listener(self.config.symbol, self._on_cycle_completed)
 
+        # Agregar listener para capturar el último candle del timeframe base
+        base_timeframe = get_base_timeframe(self.config.timeframes)
+        self.market_data.add_complete_candle_listener(self.config.symbol, base_timeframe, self._on_base_candle_update)
+
         # Frontend initialization (if needed) would go here
         self.logger.info("Configuración completada")
 
@@ -162,11 +167,47 @@ class BacktestRunner:
             self.cycles_repository.save_cycle(cycle)
         self.logger.info(f"Cycle completed and saved: {cycle}")
 
-    def _capture_balance_snapshot(self):
-        """Capturar snapshot de balance actual"""
-        current_time = int(time.time() * 1000)
-        current_balance = self.exchange.get_balance()
-        self.balance_history.append((current_time, current_balance))
+    def _on_base_candle_update(self, candle):
+        """Handle base timeframe candle update - guardar el último candle para drawdown calculation"""
+        self.last_base_candle = candle
+
+    def _update_drawdown(self):
+        """Actualizar max drawdown basado en unrealized PnL actual"""
+        debug_logger = get_debug_logger("backtest.debug")
+        
+        # Usar el último candle del timeframe base que fue procesado por el exchange
+        last_candle = self.last_base_candle
+
+        if last_candle:
+            balance = self.exchange.get_balance()
+            # Acceder al exchange real desde el adapter
+            exchange_real = self.exchange.exchange if hasattr(self.exchange, 'exchange') else self.exchange
+            real_balance = exchange_real.get_real_balance(self.config.symbol, last_candle)
+            # Calcular unrealized PnL: real_balance - balance_efectivo
+            unrealized_pnl = real_balance - balance
+
+            debug_logger.debug(
+                f"_update_drawdown: candle_timestamp={last_candle.timestamp}, balance=${balance:,.2f}, "
+                f"real_balance=${real_balance:,.2f}, unrealized_pnl=${unrealized_pnl:,.2f}, "
+                f"current_max_unrealized_pnl_loss=${self.max_unrealized_pnl_loss:,.2f}"
+            )
+
+            # Si el unrealized PnL es negativo, actualizar el máximo
+            if unrealized_pnl < 0:
+                if unrealized_pnl < self.max_unrealized_pnl_loss:
+                    old_max = self.max_unrealized_pnl_loss
+                    self.max_unrealized_pnl_loss = unrealized_pnl
+                    debug_logger.info(
+                        f"_update_drawdown: UPDATED max_unrealized_pnl_loss from ${old_max:,.2f} to ${unrealized_pnl:,.2f}"
+                    )
+                else:
+                    debug_logger.debug(
+                        f"_update_drawdown: unrealized_pnl=${unrealized_pnl:,.2f} is negative but not less than current max=${self.max_unrealized_pnl_loss:,.2f}"
+                    )
+            else:
+                debug_logger.debug(f"_update_drawdown: unrealized_pnl=${unrealized_pnl:,.2f} is not negative")
+        else:
+            debug_logger.debug("_update_drawdown: last_base_candle is None, skipping update")
 
     def run(self) -> BacktestResults:
         """Ejecutar el backtest completo"""
@@ -214,7 +255,7 @@ class BacktestRunner:
 
         self.start_execution_time = time.time()
         self.candles_processed = 0
-        self._capture_balance_snapshot()
+        self._update_drawdown()
 
         try:
             if self.config.enable_frontend:
@@ -297,8 +338,10 @@ class BacktestRunner:
                 self.simulator.next_candle()
                 self.candles_processed += 1
 
+                # Actualizar drawdown en cada vela para capturar el máximo unrealized PnL negativo
+                self._update_drawdown()
+
                 if self.candles_processed % 100 == 0:
-                    self._capture_balance_snapshot()
                     self.logger.info(
                         f"Procesadas {self.candles_processed:,} velas | Balance: ${self.exchange.get_balance():,.2f}"
                     )
@@ -498,15 +541,24 @@ class BacktestRunner:
             float(gross_profit / gross_loss) if gross_loss > 0 else (float("inf") if gross_profit > 0 else 0)
         )
 
+        # Calcular max_drawdown desde max_unrealized_pnl_loss
         max_drawdown = 0.0
-        if len(self.balance_history) > 1:
-            peak = self.balance_history[0][1]
-            for timestamp, balance in self.balance_history:
-                if balance > peak:
-                    peak = balance
-                if peak > 0:
-                    drawdown = float((peak - balance) / peak * 100)
-                    max_drawdown = max(max_drawdown, drawdown)
+        if self.max_unrealized_pnl_loss < 0:
+            # Drawdown en porcentaje del balance efectivo
+            balance_efectivo = float(final_balance)
+            if balance_efectivo > 0:
+                max_drawdown = (abs(float(self.max_unrealized_pnl_loss)) / balance_efectivo) * 100
+            else:
+                max_drawdown = 0.0
+            
+            self.logger.info(
+                f"Max drawdown calculation (basado en unrealized PnL): "
+                f"max_unrealized_pnl_loss=${self.max_unrealized_pnl_loss:,.2f}, "
+                f"balance_efectivo=${balance_efectivo:,.2f}, "
+                f"max_drawdown={max_drawdown:.4f}%"
+            )
+        else:
+            self.logger.info("No unrealized PnL negativo registrado durante el backtest")
 
         total_trade_value = sum(abs(t.quantity * t.price) for t in trades)
         avg_trade_size = total_trade_value / len(trades) if trades else Decimal(0)
@@ -514,7 +566,7 @@ class BacktestRunner:
         commission_pct = (float(total_commission / abs(total_return)) * 100) if total_return != 0 else 0
 
         cycle_stats = self._calculate_cycle_statistics()
-        self._capture_balance_snapshot()
+        self._update_drawdown()
 
         results = BacktestResults(
             start_time=self.config.start_time,

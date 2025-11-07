@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from trading.agents import OrchestratorAgent
-from trading.domain.messages import StartBacktestRequest
+from trading.domain.messages import EvaluationResponse, StartBacktestRequest
 from trading.strategies.factory import create_strategy_factory, get_available_strategies
 
 
@@ -37,6 +37,22 @@ def parse_timestamp(timestamp_str: str) -> int:
             raise ValueError(f"Invalid timestamp format: {timestamp_str}")
 
 
+def print_evaluation_results(evaluation: EvaluationResponse):
+    """Print evaluation results in a formatted way"""
+    print("\n📊 Evaluación de Resultados:")
+    print(f"   Status: {'✅ PASÓ' if evaluation.evaluation_passed else '❌ NO PASÓ'}")
+    print(f"   Recomendación: {evaluation.recommendation.upper()}")
+
+    print("\n   Métricas calculadas:")
+    for metric_name, metric_value in evaluation.metrics.items():
+        print(f"   - {metric_name}: {metric_value:.4f}")
+
+    print("\n   Cumplimiento de KPIs:")
+    for kpi_name, passed in evaluation.kpi_compliance.items():
+        status = "✅" if passed else "❌"
+        print(f"   {status} {kpi_name}: {'CUMPLE' if passed else 'NO CUMPLE'}")
+
+
 def run_backtest(
     symbol: str,
     start_time: int,
@@ -47,6 +63,8 @@ def run_backtest(
     max_notional: Decimal = Decimal("50000"),
     timeframes: list[str] = None,
     rsi_limits: list[int] | None = None,
+    kpis: dict[str, float] | None = None,
+    skip_evaluation: bool = False,
     **kwargs,
 ):
     """Execute backtest using OrchestratorAgent"""
@@ -105,6 +123,11 @@ def run_backtest(
             print(f"   Total ciclos: {results.total_cycles}")
             print(f"   Cycle win rate: {results.cycle_win_rate:.2f}%")
 
+        # Execute evaluation automatically unless skipped
+        if not skip_evaluation:
+            evaluation = orchestrator.evaluate_backtest(backtest_results=results, kpis=kpis)
+            print_evaluation_results(evaluation)
+
         return results
 
     finally:
@@ -149,12 +172,42 @@ def main():
             "Example: --rsi-limits 15 50 85. Default: 15 50 85"
         ),
     )
+    parser.add_argument(
+        "--kpi-sharpe",
+        type=float,
+        default=2.0,
+        help="KPI threshold for Sharpe Ratio (default: 2.0)",
+    )
+    parser.add_argument(
+        "--kpi-drawdown",
+        type=float,
+        default=10.0,
+        help="KPI threshold for Max Drawdown percentage (default: 10.0)",
+    )
+    parser.add_argument(
+        "--kpi-profit-factor",
+        type=float,
+        default=1.5,
+        help="KPI threshold for Profit Factor (default: 1.5)",
+    )
+    parser.add_argument(
+        "--no-evaluate",
+        action="store_true",
+        help="Skip automatic evaluation after backtest",
+    )
 
     args = parser.parse_args()
 
     # Parse timestamps
     start_time = parse_timestamp(args.start_time)
     end_time = parse_timestamp(args.end_time) if args.end_time else None
+
+    # Build KPIs dict if evaluation is enabled
+    kpis = None if args.no_evaluate else {
+        "sharpe_ratio": args.kpi_sharpe,
+        "max_drawdown": args.kpi_drawdown,
+        "profit_factor": args.kpi_profit_factor,
+    }
 
     # Run backtest
     run_backtest(
@@ -169,6 +222,8 @@ def main():
         stop_on_loss=args.stop_on_loss,
         timeframes=args.timeframes,
         rsi_limits=args.rsi_limits,
+        kpis=kpis,
+        skip_evaluation=args.no_evaluate,
     )
 
 

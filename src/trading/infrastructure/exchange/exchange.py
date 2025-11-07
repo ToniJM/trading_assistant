@@ -40,6 +40,33 @@ class Exchange:
         """Get current account balance"""
         return self.account_repository.get_balance()
 
+    def get_real_balance(self, symbol: str, candle: Candle) -> Decimal:
+        """Get real balance including unrealized PnL for open positions
+
+        Args:
+            symbol: Trading symbol
+            candle: Current candle to calculate unrealized PnL
+
+        Returns:
+            Real balance (balance + unrealized PnL)
+        """
+        balance = self.get_balance()
+        long_position = self.get_position(symbol, "long")
+        short_position = self.get_position(symbol, "short")
+
+        # Calculate unrealized P&L for long position (using worst case: low_price)
+        long_unrealized_pnl = Decimal(0)
+        if long_position.amount > 0:
+            long_unrealized_pnl = long_position.amount * (candle.low_price - long_position.entry_price)
+
+        # Calculate unrealized P&L for short position (using worst case: high_price)
+        short_unrealized_pnl = Decimal(0)
+        if short_position.amount < 0:
+            short_unrealized_pnl = abs(short_position.amount) * (short_position.entry_price - candle.high_price)
+
+        total_unrealized_pnl = long_unrealized_pnl + short_unrealized_pnl
+        return balance + total_unrealized_pnl
+
     def set_leverage(self, symbol: str, leverage: Decimal):
         """Set leverage for symbol"""
         self.account_repository.set_leverage(symbol, leverage)

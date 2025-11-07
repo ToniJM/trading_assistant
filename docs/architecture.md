@@ -43,7 +43,8 @@ Los agentes están definidos como:
 **Herramientas**:
 - `SimulatorAgent`: Para obtener datos de mercado
 - `BacktestAgent`: Para ejecutar backtests
-- (Futuro) `EvaluatorAgent`, `OptimizerAgent`
+- `EvaluatorAgent`: Para evaluar resultados de backtests
+- (Futuro) `OptimizerAgent`
 
 **Políticas**:
 - `max_concurrent_backtests`: Límite de backtests simultáneos
@@ -90,17 +91,25 @@ Los agentes están definidos como:
 - Recibe: `StartBacktestRequest`
 - Envía: `BacktestResultsResponse`, `BacktestStatusUpdate`
 
-#### 4. EvaluatorAgent (Futuro)
+#### 4. EvaluatorAgent
 
 **Rol**: Analizar métricas y generar reportes cuantitativos
 
 **Herramientas**:
-- Métricas: Sharpe Ratio, Drawdown, Profit Factor, etc.
-- Generación de reportes
+- Métricas: Sharpe Ratio, Calmar Ratio, Drawdown, Profit Factor, etc.
+- Generación de reportes y recomendaciones
+
+**Políticas**:
+- KPIs por defecto: Sharpe Ratio ≥ 2.0, Max Drawdown ≤ 10%, Profit Factor ≥ 1.5
+- KPIs configurables vía `EvaluationRequest.kpis`
+
+**Memoria**:
+- Historial de evaluaciones
+- Métricas calculadas por run
 
 **Contratos A2A**:
-- Recibe: `BacktestResultsResponse`
-- Envía: `EvaluationReport`
+- Recibe: `EvaluationRequest` y `BacktestResultsResponse`
+- Envía: `EvaluationResponse` con métricas, cumplimiento de KPIs y recomendación
 
 #### 5. OptimizerAgent (Futuro)
 
@@ -181,6 +190,11 @@ Contratos Pydantic para comunicación entre agentes:
 - **CandlesRepository**: Repositorio de velas históricas
 - **MarketDataAdapter**: Adaptador de market data
 
+### Evaluation (`infrastructure/evaluation/`)
+
+- **metrics.py**: Cálculo de métricas avanzadas (Sharpe Ratio, Calmar Ratio)
+- **extract_metrics_from_results()**: Extracción de métricas desde `BacktestResultsResponse`
+
 ### Logging (`infrastructure/logging/`)
 
 - **get_logger()**: Logger principal con contexto ADK
@@ -204,8 +218,8 @@ Contratos Pydantic para comunicación entre agentes:
 Orchestrator → SimulatorAgent (get market data)
             → BacktestAgent (execute backtest)
             → BacktestResultsResponse
-            → (Futuro) EvaluatorAgent (analyze metrics)
-            → RegistryAgent (store results)
+            → EvaluatorAgent (analyze metrics)
+            → (Futuro) RegistryAgent (store results)
 ```
 
 **Pasos**:
@@ -214,8 +228,10 @@ Orchestrator → SimulatorAgent (get market data)
 3. `Orchestrator` ejecuta backtest vía `BacktestAgent`
 4. `BacktestAgent` ejecuta backtest usando `BacktestRunner`
 5. `Orchestrator` recibe `BacktestResultsResponse`
-6. (Futuro) `Orchestrator` envía resultados a `EvaluatorAgent`
-7. `Orchestrator` almacena resultados en `RegistryAgent`
+6. `Orchestrator` envía resultados a `EvaluatorAgent` (vía `evaluate_backtest()`)
+7. `EvaluatorAgent` calcula métricas avanzadas y verifica KPIs
+8. `EvaluatorAgent` retorna `EvaluationResponse` con recomendación
+9. (Futuro) `Orchestrator` almacena resultados en `RegistryAgent`
 
 ### 2. Optimization Flow (Futuro)
 

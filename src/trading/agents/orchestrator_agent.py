@@ -5,12 +5,15 @@ from collections.abc import Callable
 from trading.domain.messages import (
     AgentMessage,
     BacktestResultsResponse,
+    EvaluationRequest,
+    EvaluationResponse,
     StartBacktestRequest,
 )
 from trading.infrastructure.logging import logging_context
 
 from .backtest_agent import BacktestAgent
 from .base_agent import BaseAgent
+from .evaluator_agent import EvaluatorAgent
 from .simulator_agent import SimulatorAgent
 
 
@@ -18,7 +21,7 @@ class OrchestratorAgent(BaseAgent):
     """Orchestrator agent that coordinates backtests and evaluations
 
     Role: Coordinate backtests, receive results, trigger optimizations
-    Tools: SimulatorAgent, BacktestAgent (future: EvaluatorAgent, OptimizerAgent)
+    Tools: SimulatorAgent, BacktestAgent, EvaluatorAgent (future: OptimizerAgent)
     Memory: Stores orchestration state, backtest history
     Policies: Budget per run, execution limits
     """
@@ -29,6 +32,7 @@ class OrchestratorAgent(BaseAgent):
         # Child agents
         self.simulator_agent: SimulatorAgent | None = None
         self.backtest_agent: BacktestAgent | None = None
+        self.evaluator_agent: EvaluatorAgent | None = None
 
         # Policies
         self.policies = {
@@ -48,6 +52,7 @@ class OrchestratorAgent(BaseAgent):
             # Initialize child agents
             self.simulator_agent = SimulatorAgent(run_id=self.run_id).initialize(is_backtest=True)
             self.backtest_agent = BacktestAgent(run_id=self.run_id).initialize()
+            self.evaluator_agent = EvaluatorAgent(run_id=self.run_id).initialize()
 
             self.store_memory("initialized", True)
             self.log_event("orchestrator_initialized", {"run_id": self.run_id})
@@ -125,6 +130,66 @@ class OrchestratorAgent(BaseAgent):
                 self.logger.error(f"Error orchestrating backtest: {e}", exc_info=True)
                 raise
 
+    def evaluate_backtest(
+        self,
+        run_id: str | None = None,
+        backtest_results: BacktestResultsResponse | None = None,
+        kpis: dict[str, float] | None = None,
+    ) -> EvaluationResponse:
+        """Evaluate a completed backtest
+
+        Args:
+            run_id: Run identifier of the backtest to evaluate. If backtest_results is provided, run_id is taken from it.
+            backtest_results: Backtest results to evaluate. If None, retrieved from completed_backtests using run_id.
+            kpis: Optional KPI thresholds to check. If None, uses default KPIs.
+
+        Returns:
+            EvaluationResponse with metrics, KPI compliance, and recommendation
+
+        Raises:
+            ValueError: If neither run_id nor backtest_results is provided, or if backtest not found
+        """
+        with logging_context(run_id=self.run_id, agent=self.agent_name, flow="evaluate_backtest"):
+            try:
+                # Get backtest results
+                if backtest_results is None:
+                    if run_id is None:
+                        raise ValueError("Either run_id or backtest_results must be provided")
+                    if run_id not in self.completed_backtests:
+                        raise ValueError(f"Backtest {run_id} not found in completed_backtests")
+                    backtest_results = self.completed_backtests[run_id]
+                else:
+                    run_id = backtest_results.run_id
+
+                # Create evaluation request
+                request = EvaluationRequest(
+                    run_id=run_id,
+                    metrics=None,  # Calculate all metrics
+                    kpis=kpis,  # Use provided KPIs or defaults
+                )
+
+                # Evaluate via EvaluatorAgent
+                evaluation = self.evaluator_agent.evaluate(request, backtest_results=backtest_results)
+
+                # Store evaluation in memory
+                self.store_memory(f"evaluation_{run_id}", evaluation)
+
+                self.log_event(
+                    "evaluation_completed",
+                    {
+                        "run_id": run_id,
+                        "evaluation_passed": evaluation.evaluation_passed,
+                        "recommendation": evaluation.recommendation,
+                        "flow_id": "evaluate_backtest",
+                    },
+                )
+
+                return evaluation
+
+            except Exception as e:
+                self.logger.error(f"Error evaluating backtest: {e}", exc_info=True)
+                raise
+
     def handle_message(self, message: AgentMessage) -> AgentMessage:
         """Handle incoming A2A message"""
         with logging_context(run_id=self.run_id, agent=self.agent_name, flow=message.flow_id):
@@ -160,4 +225,6 @@ class OrchestratorAgent(BaseAgent):
                 self.simulator_agent.close()
             if self.backtest_agent:
                 self.backtest_agent.close()
+            if self.evaluator_agent:
+                self.evaluator_agent.close()
             self.logger.info("OrchestratorAgent closed")

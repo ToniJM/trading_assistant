@@ -131,19 +131,21 @@ trading/
 - ✅ `SimulatorAgent`: Wrapper ADK para MarketDataSimulator
 - ✅ `BacktestAgent`: Wrapper ADK para BacktestRunner
 - ✅ `OrchestratorAgent`: Coordinador principal
+- ✅ `EvaluatorAgent`: Evaluador de métricas y KPIs
 
 ### 5. Tests
 - ✅ Tests unitarios del dominio (entities, types, messages)
-- ✅ Tests unitarios de infraestructura (backtest, exchange, logging, simulator)
+- ✅ Tests unitarios de infraestructura (backtest, exchange, logging, simulator, evaluation)
+- ✅ Tests de agentes (evaluator_agent)
 - ✅ Tests de integración de agentes
 - ✅ Tests end-to-end de backtest
 
 ## ⚠️ Pendiente / Próximos Pasos
 
-### 1. EvaluatorAgent (Futuro)
-- ⏳ `EvaluatorAgent`: Analizar métricas y generar reportes
-- ⏳ Métricas avanzadas: Sharpe Ratio, Drawdown, Profit Factor
-- ⏳ Generación de reportes cuantitativos
+### 1. EvaluatorAgent ✅
+- ✅ `EvaluatorAgent`: Analizar métricas y generar reportes
+- ✅ Métricas avanzadas: Sharpe Ratio, Calmar Ratio, Drawdown, Profit Factor
+- ✅ Generación de reportes cuantitativos y recomendaciones
 
 ### 2. OptimizerAgent (Futuro)
 - ⏳ `OptimizerAgent`: Ajustar parámetros de estrategias
@@ -198,8 +200,8 @@ trading/
 
 - **Archivos Python**: ~40+
 - **Líneas de código estimadas**: ~6000+
-- **Componentes completados**: 9/13 (69%)
-- **Agentes implementados**: 3/6 (50%)
+- **Componentes completados**: 10/13 (77%)
+- **Agentes implementados**: 4/6 (67%)
 - **Tests implementados**: 40+ tests
 - **Errores de lint**: 0 ✅
 
