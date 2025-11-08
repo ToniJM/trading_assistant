@@ -90,6 +90,34 @@ python scripts/run_backtest.py \
   --leverage 100
 ```
 
+### Optimizar Estrategia con IA
+
+Usando el script de optimización iterativa con OptimizerAgent:
+
+```bash
+# Optimización básica
+python scripts/optimize_strategy.py \
+  --start-time 2025-01-01T00:00:00Z \
+  --end-time 2025-01-31T23:59:59Z
+
+# Con parámetros personalizados
+python scripts/optimize_strategy.py \
+  --symbol BTCUSDT \
+  --start-time 2025-01-01T00:00:00Z \
+  --end-time 2025-01-31T23:59:59Z \
+  --objective profit_factor \
+  --max-iterations 3 \
+  --initial-rsi 20,50,80 \
+  --output optimization_results.json
+```
+
+El script ejecuta iterativamente:
+1. Backtest con parámetros actuales
+2. Evaluación de resultados
+3. Optimización con IA (si se recomienda)
+4. Nuevo backtest con parámetros optimizados
+5. Repite hasta cumplir KPIs o alcanzar máximo de iteraciones
+
 ### Usar los Agentes Programáticamente
 
 ```python

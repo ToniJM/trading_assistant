@@ -48,5 +48,6 @@ htmlcov/
 # Project specific
 backtest_results.db
 candles.db
+results/
 
 .ruff_cache

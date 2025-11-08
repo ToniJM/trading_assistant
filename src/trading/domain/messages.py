@@ -163,6 +163,38 @@ class OptimizationRequest(BaseModel):
     )
 
 
+class OptimizationResult(BaseModel):
+    """Response with optimization results from OptimizerAgent"""
+
+    run_id: str = Field(..., description="Optimization run identifier")
+    strategy_name: str = Field(..., description="Strategy that was optimized")
+    optimized_parameters: dict[str, Any] = Field(..., description="Optimized parameter values")
+    reasoning: str = Field(..., description="AI explanation of the optimization changes")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence level (0.0-1.0)")
+    expected_improvement: dict[str, float] = Field(
+        default_factory=dict,
+        description="Expected metric improvements (e.g., {'sharpe_ratio': 0.5})",
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata (model used, tokens, etc.)",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "run_id": "opt-550e8400-e29b-41d4-a716-446655440000",
+                "strategy_name": "carga_descarga",
+                "optimized_parameters": {"rsi_limits": [20, 50, 80]},
+                "reasoning": "Reduced RSI lower threshold to capture more oversold conditions",
+                "confidence": 0.75,
+                "expected_improvement": {"sharpe_ratio": 0.3, "profit_factor": 0.2},
+                "metadata": {"model": "llama-3.3-70b-versatile", "tokens": 1500},
+            }
+        }
+    )
+
+
 class EvaluationRequest(BaseModel):
     """Request to evaluate backtest results"""
 

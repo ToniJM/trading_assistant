@@ -7,6 +7,8 @@ from trading.domain.messages import (
     BacktestResultsResponse,
     EvaluationRequest,
     EvaluationResponse,
+    OptimizationRequest,
+    OptimizationResult,
     StartBacktestRequest,
 )
 from trading.infrastructure.logging import logging_context
@@ -14,6 +16,7 @@ from trading.infrastructure.logging import logging_context
 from .backtest_agent import BacktestAgent
 from .base_agent import BaseAgent
 from .evaluator_agent import EvaluatorAgent
+from .optimizer_agent import OptimizerAgent
 from .simulator_agent import SimulatorAgent
 
 
@@ -21,7 +24,7 @@ class OrchestratorAgent(BaseAgent):
     """Orchestrator agent that coordinates backtests and evaluations
 
     Role: Coordinate backtests, receive results, trigger optimizations
-    Tools: SimulatorAgent, BacktestAgent, EvaluatorAgent (future: OptimizerAgent)
+    Tools: SimulatorAgent, BacktestAgent, EvaluatorAgent, OptimizerAgent
     Memory: Stores orchestration state, backtest history
     Policies: Budget per run, execution limits
     """
@@ -33,16 +36,19 @@ class OrchestratorAgent(BaseAgent):
         self.simulator_agent: SimulatorAgent | None = None
         self.backtest_agent: BacktestAgent | None = None
         self.evaluator_agent: EvaluatorAgent | None = None
+        self.optimizer_agent: OptimizerAgent | None = None
 
         # Policies
         self.policies = {
             "max_concurrent_backtests": {"max": 1},
             "max_backtests_per_run": {"max": 10},
+            "max_optimization_iterations": {"max": 5},
         }
 
         # Track execution state
         self.active_backtests: dict[str, StartBacktestRequest] = {}
         self.completed_backtests: dict[str, BacktestResultsResponse] = {}
+        self.optimization_history: dict[str, OptimizationResult] = {}
 
     def initialize(self) -> "OrchestratorAgent":
         """Initialize orchestrator and child agents"""
@@ -53,6 +59,7 @@ class OrchestratorAgent(BaseAgent):
             self.simulator_agent = SimulatorAgent(run_id=self.run_id).initialize(is_backtest=True)
             self.backtest_agent = BacktestAgent(run_id=self.run_id).initialize()
             self.evaluator_agent = EvaluatorAgent(run_id=self.run_id).initialize()
+            self.optimizer_agent = OptimizerAgent(run_id=self.run_id).initialize()
 
             self.store_memory("initialized", True)
             self.log_event("orchestrator_initialized", {"run_id": self.run_id})
@@ -190,6 +197,92 @@ class OrchestratorAgent(BaseAgent):
                 self.logger.error(f"Error evaluating backtest: {e}", exc_info=True)
                 raise
 
+    def optimize_strategy(
+        self,
+        strategy_name: str,
+        symbol: str,
+        objective: str = "sharpe_ratio",
+        parameter_space: dict[str, list[float]] | None = None,
+        base_config: StartBacktestRequest | None = None,
+    ) -> OptimizationResult:
+        """Optimize strategy parameters using OptimizerAgent
+
+        Args:
+            strategy_name: Strategy to optimize
+            symbol: Trading symbol
+            objective: Optimization objective (sharpe_ratio, profit_factor, etc.)
+            parameter_space: Parameter space to explore (if None, uses defaults)
+            base_config: Base backtest configuration (if None, uses last backtest config)
+
+        Returns:
+            OptimizationResult with suggested parameters
+
+        Raises:
+            ValueError: If optimizer agent not initialized
+        """
+        with logging_context(run_id=self.run_id, agent=self.agent_name, flow="optimize_strategy"):
+            try:
+                if self.optimizer_agent is None:
+                    raise ValueError("OptimizerAgent not initialized. Call initialize() first.")
+
+                # Collect previous backtest results for this strategy
+                previous_results = [
+                    result
+                    for result in self.completed_backtests.values()
+                    if result.strategy_name == strategy_name and result.symbol == symbol
+                ]
+
+                # Use default parameter space if not provided
+                if parameter_space is None:
+                    parameter_space = {
+                        "rsi_limits": list(range(10, 91, 5)),  # 10-90 in steps of 5
+                    }
+
+                # Use base config or create from last backtest
+                if base_config is None and previous_results:
+                    last_result = previous_results[-1]
+                    base_config = StartBacktestRequest(
+                        symbol=symbol,
+                        start_time=last_result.start_time,
+                        end_time=last_result.end_time,
+                        strategy_name=strategy_name,
+                        rsi_limits=getattr(last_result, "rsi_limits", None),
+                        timeframes=getattr(last_result, "timeframes", None),
+                    )
+
+                # Create optimization request
+                request = OptimizationRequest(
+                    run_id=f"opt_{self.run_id}",
+                    strategy_name=strategy_name,
+                    symbol=symbol,
+                    parameter_space=parameter_space,
+                    objective=objective,
+                    backtest_config=base_config,
+                )
+
+                # Call optimizer agent
+                result = self.optimizer_agent.optimize(request, previous_results=previous_results)
+
+                # Store in memory
+                self.optimization_history[request.run_id] = result
+                self.store_memory(f"optimization_{request.run_id}", result)
+
+                self.log_event(
+                    "optimization_completed",
+                    {
+                        "run_id": request.run_id,
+                        "strategy": strategy_name,
+                        "confidence": result.confidence,
+                        "flow_id": "optimize_strategy",
+                    },
+                )
+
+                return result
+
+            except Exception as e:
+                self.logger.error(f"Error optimizing strategy: {e}", exc_info=True)
+                raise
+
     def handle_message(self, message: AgentMessage) -> AgentMessage:
         """Handle incoming A2A message"""
         with logging_context(run_id=self.run_id, agent=self.agent_name, flow=message.flow_id):
@@ -227,4 +320,6 @@ class OrchestratorAgent(BaseAgent):
                 self.backtest_agent.close()
             if self.evaluator_agent:
                 self.evaluator_agent.close()
+            if self.optimizer_agent:
+                self.optimizer_agent.close()
             self.logger.info("OrchestratorAgent closed")

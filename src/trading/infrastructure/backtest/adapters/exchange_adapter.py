@@ -89,14 +89,26 @@ class SimulatorAdapter(ExchangePort):
     def get_position(self, symbol: str, side: SIDE_TYPE) -> Position:
         """Get position for symbol and side"""
         position = self.simulator.get_position(symbol, side)
-        # Load trades into position
+        # Load trades into position (optimized: only load new trades)
         if abs(position.amount) > Decimal(0):
+            # Create set of trade IDs already loaded in position for O(1) lookup
+            loaded_trade_ids = {trade.order_id for trade in position.trades}
+            
             symbol_trades = self.simulator.trades_repository.get_symbol_trades(symbol.lower())
             position_side_trades = symbol_trades.get(side, [])
+            
+            # Only process trades that haven't been loaded yet
+            # Iterate in reverse to process most recent trades first
             for trade in reversed(position_side_trades):
                 if trade.position_side != side:
                     continue
+                # Skip if trade already loaded
+                if trade.order_id in loaded_trade_ids:
+                    continue
+                # Add new trade
                 position.add_trade(trade)
+                loaded_trade_ids.add(trade.order_id)
+                # Stop if position is closed
                 if abs(position.amount) == 0:
                     break
         return position

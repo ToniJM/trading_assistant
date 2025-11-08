@@ -44,7 +44,7 @@ Los agentes están definidos como:
 - `SimulatorAgent`: Para obtener datos de mercado
 - `BacktestAgent`: Para ejecutar backtests
 - `EvaluatorAgent`: Para evaluar resultados de backtests
-- (Futuro) `OptimizerAgent`
+- `OptimizerAgent`: Para optimizar parámetros usando IA
 
 **Políticas**:
 - `max_concurrent_backtests`: Límite de backtests simultáneos
@@ -111,17 +111,32 @@ Los agentes están definidos como:
 - Recibe: `EvaluationRequest` y `BacktestResultsResponse`
 - Envía: `EvaluationResponse` con métricas, cumplimiento de KPIs y recomendación
 
-#### 5. OptimizerAgent (Futuro)
+#### 5. OptimizerAgent
 
-**Rol**: Ajustar parámetros de estrategias basado en feedback
+**Rol**: Ajustar parámetros de estrategias usando IA (Groq LLM)
 
 **Herramientas**:
-- Optimización de parámetros
-- Selección de estrategias alternativas
+- Cliente Groq LLM para análisis inteligente
+- Acceso a memoria episódica (historial de backtests)
+- Validación de parámetros sugeridos
+
+**Memoria**:
+- Historial de optimizaciones
+- Contexto de backtests previos
+
+**Políticas**:
+- `max_optimization_iterations`: Límite de iteraciones (default: 5)
+- `min_confidence_threshold`: Confianza mínima para aplicar cambios (default: 0.5)
 
 **Contratos A2A**:
-- Recibe: `OptimizationRequest`
-- Envía: `OptimizationResult`
+- Recibe: `OptimizationRequest` con parámetros actuales y espacio de búsqueda
+- Envía: `OptimizationResult` con parámetros optimizados, razonamiento, confianza y mejoras esperadas
+
+**Funcionalidad**:
+- Analiza métricas históricas usando LLM
+- Sugiere ajustes de parámetros basados en patrones
+- Proporciona razonamiento explicativo de los cambios
+- Fallback a optimización determinística si LLM no disponible
 
 #### 6. RegistryAgent (Futuro)
 
@@ -162,7 +177,8 @@ Contratos Pydantic para comunicación entre agentes:
 - **StartBacktestRequest**: Solicitud de backtest
 - **BacktestResultsResponse**: Resultados del backtest
 - **BacktestStatusUpdate**: Actualización de estado durante backtest
-- **OptimizationRequest**: Solicitud de optimización (futuro)
+- **OptimizationRequest**: Solicitud de optimización con espacio de parámetros
+- **OptimizationResult**: Resultado de optimización con parámetros sugeridos y razonamiento
 - **ErrorResponse**: Respuesta de error
 
 ## Capa de Infraestructura
@@ -195,6 +211,13 @@ Contratos Pydantic para comunicación entre agentes:
 - **metrics.py**: Cálculo de métricas avanzadas (Sharpe Ratio, Calmar Ratio)
 - **extract_metrics_from_results()**: Extracción de métricas desde `BacktestResultsResponse`
 
+### LLM (`infrastructure/llm/`)
+
+- **groq_client.py**: Cliente Groq para integración con LLM
+- **GroqClient**: Cliente con métodos `chat()` y `chat_json()` para llamadas estructuradas
+- **get_groq_client()**: Singleton para obtener instancia del cliente
+- Configuración desde `.env`: `GROQ_API_KEY`, `GROQ_MODEL` (default: llama-3.3-70b-versatile)
+
 ### Logging (`infrastructure/logging/`)
 
 - **get_logger()**: Logger principal con contexto ADK
@@ -219,6 +242,7 @@ Orchestrator → SimulatorAgent (get market data)
             → BacktestAgent (execute backtest)
             → BacktestResultsResponse
             → EvaluatorAgent (analyze metrics)
+            → (If recommendation == "optimize") OptimizerAgent (optimize parameters)
             → (Futuro) RegistryAgent (store results)
 ```
 
@@ -233,22 +257,35 @@ Orchestrator → SimulatorAgent (get market data)
 8. `EvaluatorAgent` retorna `EvaluationResponse` con recomendación
 9. (Futuro) `Orchestrator` almacena resultados en `RegistryAgent`
 
-### 2. Optimization Flow (Futuro)
+### 2. Optimization Flow
 
 ```
-Orchestrator → OptimizerAgent (optimize parameters)
-            → OptimizationResult
+Orchestrator → OptimizerAgent (optimize parameters using AI)
+            → OptimizationResult (with reasoning and confidence)
             → Orchestrator (run new backtest with optimized params)
-            → (Loop until convergence)
+            → (Loop until convergence or max iterations)
 ```
 
 **Pasos**:
-1. `Orchestrator` detecta necesidad de optimización
-2. `Orchestrator` envía `OptimizationRequest` a `OptimizerAgent`
-3. `OptimizerAgent` ajusta parámetros o selecciona estrategia alternativa
-4. `OptimizerAgent` devuelve `OptimizationResult`
-5. `Orchestrator` ejecuta nuevo backtest con parámetros optimizados
-6. Ciclo continúa hasta convergencia o límite de iteraciones
+1. `Orchestrator` detecta necesidad de optimización (evaluación recomienda "optimize")
+2. `Orchestrator` recopila backtests previos de la estrategia
+3. `Orchestrator` llama a `optimize_strategy()` que crea `OptimizationRequest`
+4. `OptimizerAgent` construye prompt estructurado con:
+   - Métricas históricas de backtests previos
+   - Parámetros actuales y espacio de búsqueda
+   - Objetivo de optimización (sharpe_ratio, profit_factor, etc.)
+5. `OptimizerAgent` llama a Groq LLM con el prompt
+6. LLM analiza patrones y sugiere parámetros optimizados con razonamiento
+7. `OptimizerAgent` valida parámetros sugeridos contra espacio de búsqueda
+8. `OptimizerAgent` retorna `OptimizationResult` con:
+   - Parámetros optimizados validados
+   - Razonamiento explicativo del LLM
+   - Nivel de confianza (0.0-1.0)
+   - Mejoras esperadas en métricas
+9. `Orchestrator` ejecuta nuevo backtest con parámetros optimizados
+10. Ciclo continúa hasta convergencia, KPIs cumplidos, o límite de iteraciones
+
+**Fallback**: Si LLM no disponible, usa optimización determinística básica basada en heurísticas.
 
 ### 3. Promotion Flow (Futuro)
 
