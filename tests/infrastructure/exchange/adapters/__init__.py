@@ -1,0 +1,2 @@
+"""Tests for exchange adapters"""
+
