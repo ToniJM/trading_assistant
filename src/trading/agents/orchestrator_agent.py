@@ -10,6 +10,7 @@ from trading.domain.messages import (
     OptimizationRequest,
     OptimizationResult,
     StartBacktestRequest,
+    StoreResultsRequest,
 )
 from trading.infrastructure.logging import logging_context
 
@@ -17,6 +18,7 @@ from .backtest_agent import BacktestAgent
 from .base_agent import BaseAgent
 from .evaluator_agent import EvaluatorAgent
 from .optimizer_agent import OptimizerAgent
+from .registry_agent import RegistryAgent
 from .simulator_agent import SimulatorAgent
 
 
@@ -37,6 +39,7 @@ class OrchestratorAgent(BaseAgent):
         self.backtest_agent: BacktestAgent | None = None
         self.evaluator_agent: EvaluatorAgent | None = None
         self.optimizer_agent: OptimizerAgent | None = None
+        self.registry_agent: RegistryAgent | None = None
 
         # Policies
         self.policies = {
@@ -60,6 +63,7 @@ class OrchestratorAgent(BaseAgent):
             self.backtest_agent = BacktestAgent(run_id=self.run_id).initialize()
             self.evaluator_agent = EvaluatorAgent(run_id=self.run_id).initialize()
             self.optimizer_agent = OptimizerAgent(run_id=self.run_id).initialize()
+            self.registry_agent = RegistryAgent(run_id=self.run_id).initialize()
 
             self.store_memory("initialized", True)
             self.log_event("orchestrator_initialized", {"run_id": self.run_id})
@@ -82,8 +86,11 @@ class OrchestratorAgent(BaseAgent):
                     )
                     raise ValueError(error.error_message)
 
+                # Store original run_id before potentially modifying it
+                original_run_id = request.run_id
+
                 # Store active backtest
-                self.active_backtests[request.run_id] = request
+                self.active_backtests[original_run_id] = request
 
                 # Configure simulator
                 self.simulator_agent.set_times(
@@ -110,12 +117,28 @@ class OrchestratorAgent(BaseAgent):
 
                 response = self.backtest_agent.execute_backtest(request, strategy_factory=strategy_factory)
 
-                # Move to completed
-                del self.active_backtests[request.run_id]
+                # Move to completed (use original_run_id for dictionary key)
+                if original_run_id in self.active_backtests:
+                    del self.active_backtests[original_run_id]
+                # Store in completed using the orchestrator's run_id (normalized)
                 self.completed_backtests[request.run_id] = response
 
                 # Store in memory
                 self.store_memory(f"backtest_{request.run_id}", response)
+
+                # Store in registry if available
+                if self.registry_agent:
+                    try:
+                        store_request = StoreResultsRequest(
+                            run_id=original_run_id,
+                            strategy_name=request.strategy_name,
+                            symbol=request.symbol,
+                            backtest_results=response,
+                            metadata={"source": "orchestrator", "flow": "run_backtest"},
+                        )
+                        self.registry_agent.store_results(store_request)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to store backtest results in registry: {e}")
 
                 self.log_event(
                     "backtest_completed",
@@ -130,9 +153,10 @@ class OrchestratorAgent(BaseAgent):
                 return response
 
             except Exception as e:
-                # Cleanup on error
-                if request.run_id in self.active_backtests:
-                    del self.active_backtests[request.run_id]
+                # Cleanup on error (use original_run_id if available, otherwise request.run_id)
+                cleanup_run_id = original_run_id if 'original_run_id' in locals() else request.run_id
+                if cleanup_run_id in self.active_backtests:
+                    del self.active_backtests[cleanup_run_id]
 
                 self.logger.error(f"Error orchestrating backtest: {e}", exc_info=True)
                 raise
@@ -180,6 +204,24 @@ class OrchestratorAgent(BaseAgent):
 
                 # Store evaluation in memory
                 self.store_memory(f"evaluation_{run_id}", evaluation)
+
+                # Store in registry if available
+                if self.registry_agent:
+                    try:
+                        # Get backtest results for metadata
+                        backtest_results = (
+                            backtest_results if backtest_results else self.completed_backtests.get(run_id)
+                        )
+                        store_request = StoreResultsRequest(
+                            run_id=run_id,
+                            strategy_name=backtest_results.strategy_name if backtest_results else "unknown",
+                            symbol=backtest_results.symbol if backtest_results else "unknown",
+                            evaluation_results=evaluation,
+                            metadata={"source": "orchestrator", "flow": "evaluate_backtest"},
+                        )
+                        self.registry_agent.store_results(store_request)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to store evaluation results in registry: {e}")
 
                 self.log_event(
                     "evaluation_completed",
@@ -267,6 +309,20 @@ class OrchestratorAgent(BaseAgent):
                 self.optimization_history[request.run_id] = result
                 self.store_memory(f"optimization_{request.run_id}", result)
 
+                # Store in registry if available
+                if self.registry_agent:
+                    try:
+                        store_request = StoreResultsRequest(
+                            run_id=request.run_id,
+                            strategy_name=strategy_name,
+                            symbol=symbol,
+                            optimization_results=result,
+                            metadata={"source": "orchestrator", "flow": "optimize_strategy"},
+                        )
+                        self.registry_agent.store_results(store_request)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to store optimization results in registry: {e}")
+
                 self.log_event(
                     "optimization_completed",
                     {
@@ -322,4 +378,6 @@ class OrchestratorAgent(BaseAgent):
                 self.evaluator_agent.close()
             if self.optimizer_agent:
                 self.optimizer_agent.close()
+            if self.registry_agent:
+                self.registry_agent.close()
             self.logger.info("OrchestratorAgent closed")

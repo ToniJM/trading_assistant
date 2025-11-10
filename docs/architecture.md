@@ -138,17 +138,59 @@ Los agentes están definidos como:
 - Proporciona razonamiento explicativo de los cambios
 - Fallback a optimización determinística si LLM no disponible
 
-#### 6. RegistryAgent (Futuro)
+#### 6. RegistryAgent
 
-**Rol**: Almacenar resultados, métricas y decisiones
+**Rol**: Almacenar y recuperar resultados, métricas y decisiones
 
 **Herramientas**:
-- Base de datos de resultados
-- Vector store para embeddings de métricas
+- `ResultsRepository`: Repositorio de persistencia (JSON files)
+- Métodos: `store_results()`, `retrieve_results()`, `get_strategy_history()`
 
 **Memoria**:
-- Historial completo de ejecuciones
-- Métricas consolidadas
+- Cache de resultados recientes
+- Índices por strategy/symbol
+
+**Políticas**:
+- `max_storage_size`: Límite de almacenamiento (default: 10GB)
+- `retention_days`: Días de retención de datos (default: 1-365 días)
+
+**Contratos A2A**:
+- Recibe: `StoreResultsRequest`, `RetrieveResultsRequest`
+- Envía: `StoreResultsResponse`, `RetrieveResultsResponse`
+
+**Funcionalidad**:
+- Almacena resultados de backtests, evaluaciones y optimizaciones
+- Recupera resultados por run_id, strategy_name o symbol
+- Mantiene índice para búsquedas rápidas
+- Cache en memoria para acceso frecuente
+
+#### 7. SchedulerAgent
+
+**Rol**: Ejecutar ciclo continuo de backtests y optimizaciones
+
+**Herramientas**:
+- `OrchestratorAgent`: Para ejecutar backtests y optimizaciones
+- `SchedulerConfig`: Configuración del scheduler
+
+**Memoria**:
+- Estado del scheduler
+- Historial de ejecuciones programadas
+- Contadores de ciclos y ejecuciones diarias
+
+**Políticas**:
+- `schedule_interval_seconds`: Intervalo entre ejecuciones (default: 3600 = 1 hora)
+- `max_runs_per_day`: Límite de ejecuciones por día (default: 100)
+- `auto_reset_memory`: Reset diario de memoria episódica (default: True)
+
+**Contratos A2A**:
+- No expone contratos A2A directamente (se ejecuta como proceso principal)
+
+**Funcionalidad**:
+- Ejecuta loop continuo de backtests
+- Evalúa resultados automáticamente
+- Dispara optimizaciones cuando se recomienda
+- Resetea memoria episódica diariamente
+- Maneja errores sin detener el loop
 
 ## Capa de Dominio
 
@@ -177,8 +219,14 @@ Contratos Pydantic para comunicación entre agentes:
 - **StartBacktestRequest**: Solicitud de backtest
 - **BacktestResultsResponse**: Resultados del backtest
 - **BacktestStatusUpdate**: Actualización de estado durante backtest
+- **EvaluationRequest**: Solicitud de evaluación de resultados
+- **EvaluationResponse**: Respuesta con métricas, cumplimiento de KPIs y recomendación
 - **OptimizationRequest**: Solicitud de optimización con espacio de parámetros
 - **OptimizationResult**: Resultado de optimización con parámetros sugeridos y razonamiento
+- **StoreResultsRequest**: Solicitud para almacenar resultados en RegistryAgent
+- **StoreResultsResponse**: Confirmación de almacenamiento
+- **RetrieveResultsRequest**: Solicitud para recuperar resultados del RegistryAgent
+- **RetrieveResultsResponse**: Resultados recuperados con paginación
 - **ErrorResponse**: Respuesta de error
 
 ## Capa de Infraestructura
@@ -217,6 +265,27 @@ Contratos Pydantic para comunicación entre agentes:
 - **GroqClient**: Cliente con métodos `chat()` y `chat_json()` para llamadas estructuradas
 - **get_groq_client()**: Singleton para obtener instancia del cliente
 - Configuración desde `.env`: `GROQ_API_KEY`, `GROQ_MODEL` (default: llama-3.3-70b-versatile)
+
+### Registry (`infrastructure/registry/`)
+
+- **results_repository.py**: Repositorio de persistencia con almacenamiento JSON
+- **ResultsRepository**: Clase principal con métodos:
+  - `store_backtest()`, `store_evaluation()`, `store_optimization()`
+  - `retrieve_by_run_id()`, `retrieve_by_strategy()`, `retrieve_by_symbol()`
+  - `get_total_count()`: Contar resultados con filtros
+- Estructura de almacenamiento:
+  - `data/registry/backtests/{run_id}.json`
+  - `data/registry/evaluations/{run_id}.json`
+  - `data/registry/optimizations/{run_id}.json`
+  - `data/registry/index.json`: Índice principal con metadatos
+
+### Scheduler (`infrastructure/scheduler/`)
+
+- **scheduler_config.py**: Configuración del scheduler con Pydantic
+- **SchedulerConfig**: Clase de configuración con:
+  - `symbol`, `strategy_name`, `schedule_interval_seconds`
+  - `backtest_duration_days`, `max_iterations_per_cycle`
+  - `kpis`, `auto_reset_memory`, `initial_balance`, `leverage`
 
 ### Logging (`infrastructure/logging/`)
 
@@ -302,6 +371,26 @@ Orchestrator → (Check KPIs)
 3. `EvaluatorAgent` valida rendimiento histórico y forward-test
 4. `RegistryAgent` marca modelo como "prod-ready"
 5. Se genera artefacto desplegable (parámetros, versión, logs)
+
+### 4. Scheduler Flow
+
+```
+SchedulerAgent → OrchestratorAgent (run backtest)
+              → OrchestratorAgent (evaluate results)
+              → (If optimize) OrchestratorAgent (optimize strategy)
+              → RegistryAgent (store all results)
+              → (Wait interval) → Repeat
+```
+
+**Pasos**:
+1. `SchedulerAgent` inicia loop continuo
+2. Calcula rango de tiempo para backtest (últimos N días)
+3. `SchedulerAgent` ejecuta backtest vía `OrchestratorAgent`
+4. `SchedulerAgent` evalúa resultados automáticamente
+5. Si evaluación recomienda "optimize", ejecuta optimización
+6. Todos los resultados se almacenan en `RegistryAgent`
+7. Espera intervalo configurado y repite
+8. Al inicio de cada día (UTC), resetea memoria episódica si está habilitado
 
 ## Sistema de Memoria
 

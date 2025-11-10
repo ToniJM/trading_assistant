@@ -253,6 +253,103 @@ class AgentMessage(BaseModel):
         return value.isoformat()
 
 
+class StoreResultsRequest(BaseModel):
+    """Request to store results in RegistryAgent"""
+
+    run_id: str = Field(..., description="Run identifier")
+    strategy_name: str = Field(..., description="Strategy name")
+    symbol: str = Field(..., description="Trading symbol")
+    backtest_results: BacktestResultsResponse | None = Field(None, description="Backtest results to store")
+    evaluation_results: EvaluationResponse | None = Field(None, description="Evaluation results to store")
+    optimization_results: OptimizationResult | None = Field(None, description="Optimization results to store")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "run_id": "550e8400-e29b-41d4-a716-446655440000",
+                "strategy_name": "carga_descarga",
+                "symbol": "BTCUSDT",
+                "backtest_results": {"run_id": "550e8400-e29b-41d4-a716-446655440000"},
+                "evaluation_results": {"run_id": "550e8400-e29b-41d4-a716-446655440000"},
+            }
+        }
+    )
+
+
+class StoreResultsResponse(BaseModel):
+    """Response confirming storage of results"""
+
+    run_id: str = Field(..., description="Run identifier")
+    stored_at: datetime = Field(default_factory=datetime.now, description="Timestamp when stored")
+    storage_id: str = Field(..., description="Unique storage identifier")
+    success: bool = Field(..., description="Whether storage was successful")
+
+    @field_serializer("stored_at")
+    def serialize_datetime(self, value: datetime) -> str:
+        return value.isoformat()
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "run_id": "550e8400-e29b-41d4-a716-446655440000",
+                "stored_at": "2024-01-01T12:00:00",
+                "storage_id": "storage-550e8400-e29b-41d4-a716-446655440000",
+                "success": True,
+            }
+        }
+    )
+
+
+class RetrieveResultsRequest(BaseModel):
+    """Request to retrieve results from RegistryAgent"""
+
+    run_id: str | None = Field(None, description="Specific run identifier to retrieve")
+    strategy_name: str | None = Field(None, description="Filter by strategy name")
+    symbol: str | None = Field(None, description="Filter by trading symbol")
+    limit: int = Field(100, ge=1, le=1000, description="Maximum number of results to return")
+    offset: int = Field(0, ge=0, description="Offset for pagination")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "run_id": "550e8400-e29b-41d4-a716-446655440000",
+                "strategy_name": "carga_descarga",
+                "symbol": "BTCUSDT",
+                "limit": 50,
+                "offset": 0,
+            }
+        }
+    )
+
+
+class RetrieveResultsResponse(BaseModel):
+    """Response with retrieved results"""
+
+    results: list[dict[str, Any]] = Field(..., description="List of retrieved results")
+    total_count: int = Field(..., description="Total number of results matching query")
+    limit: int = Field(..., description="Limit used in query")
+    offset: int = Field(..., description="Offset used in query")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "results": [
+                    {
+                        "run_id": "550e8400-e29b-41d4-a716-446655440000",
+                        "strategy_name": "carga_descarga",
+                        "symbol": "BTCUSDT",
+                        "stored_at": "2024-01-01T12:00:00",
+                    }
+                ],
+                "total_count": 1,
+                "limit": 100,
+                "offset": 0,
+            }
+        }
+    )
+
+
 class ErrorResponse(BaseModel):
     """Error response for failed operations"""
 
